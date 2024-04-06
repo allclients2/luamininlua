@@ -1,4 +1,5 @@
 --[[
+
 MIT License
 
 Copyright (c) 2024 all_clients (ROBLOX Userid: 852643438)
@@ -20,9 +21,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 ]]
 
---local print = function () end
+--v2
+
+local debugmode = false
 
 local function dump(o, m, i) --fast dump
     local i, m, d = (i or 1), (m or 3), 3
@@ -30,7 +34,7 @@ local function dump(o, m, i) --fast dump
         local f = string.rep(" ", i * d)
         local s = '{\n'
         for k, v in pairs(o) do
-            if type(k) ~= 'number' then k = '"' .. k .. '"' end
+            if type(k) ~= 'number' then k = '"' .. tostring(k) .. '"' end
             s = s .. f ..  '[' .. k .. '] = ' .. dump(v, m, i + 1) .. ',\n'
         end
         return s .. f:sub(1, -1 - d) .. '}'
@@ -39,19 +43,48 @@ local function dump(o, m, i) --fast dump
     end
 end
 
-local function printtab(...)
-    local packed = {...}
-    for _, i in ipairs(packed) do
-        print(dump(i, 3))
+local dbgprint = debugmode and print or function (...) end
+
+local dbgprinttab = debugmode and function(a, b)
+    if _VERSION == "Luau" then
+        dbgprint(a)
+    else
+        dbgprint(dump(a, b or 3))
     end
+end or function (...) end
+
+local function clone(a)
+    local b = {}
+    for i,v in pairs(a) do
+        b[i] = v
+    end
+    return b
+end
+
+local function find(a, x)
+    for i, v in pairs(a) do
+        if v == x then
+            return i
+        end
+    end
+    return nil
+end
+
+local function count(a)
+    local x = 0
+    for i, v in pairs(a) do
+        x = x + 1
+    end
+    return x
 end
 
 
-function warn(x)
-    print("! "..tostring(x).." !")
+local warn = warn or function(x)
+    dbgprint("! "..tostring(x).." !")
 end
 
-function lookupify(tb)
+
+local function lookupify(tb)
     for _, v in pairs(tb) do
         tb[v] = true
     end
@@ -229,7 +262,7 @@ function CreateLuaTokenStream(text)
             q = q + 1
         end
         for _, token in pairs(tokenBuffer) do
-            print(token.Type.."<"..token.Source..">")
+            dbgprint(token.Type.."<"..token.Source..">")
         end
         olderr("file<"..line..":"..char..">: "..str)
     end
@@ -516,7 +549,7 @@ function CreateLuaParser(text)
 
         local function listdebugtokens()
             for i = -3, 3 do
-                print((i == 0 and "HERE --> " or "").."Tokens["..i.."] = `"..peek(i).Source.."`: ",peek(i))
+                dbgprint((i == 0 and "HERE --> " or "").."Tokens["..i.."] = `"..peek(i).Source.."`: ",peek(i))
             end
         end
 
@@ -609,7 +642,7 @@ function CreateLuaParser(text)
                 end;
             }
         else
-            print(debugMark())
+            dbgprint(debugMark())
             error(getTokenStartPosition(tk)..": Unexpected symbol")
         end
     end
@@ -679,7 +712,7 @@ function CreateLuaParser(text)
 
     -- List of identifiers
     local function varlist()
-        print('varlist')
+        dbgprint('varlist')
         local varList = {}
         local commaList = {}
         if peek().Type == 'Ident' or peek().Source == '...' then --only one var
@@ -688,7 +721,7 @@ function CreateLuaParser(text)
         while peek().Source == ',' do
             table.insert(commaList, get())
             local id = expect({'Ident', "Symbol"})
-            print('listid: ', id)
+            --print('listid: ', id)
             table.insert(varList, id)
         end
         return varList, commaList
@@ -702,7 +735,7 @@ function CreateLuaParser(text)
             get()
             return body, after
         else
-            print(after.Type, after.Source)
+            dbgprint(after.Type, after.Source)
             error(getTokenStartPosition(after)..": "..terminator.." expected.")
         end
     end
@@ -937,11 +970,11 @@ function CreateLuaParser(text)
                 Type = 'BooleanLiteral';
                 Token = get();
                 GetFirstToken = function(self)
-                    print(self.Token, "is the self token f")
+                    dbgprint(self.Token, "is the self token f")
                     return self.Token
                 end;
                 GetLastToken = function(self)
-                    print(self.Token, "is the self token l")
+                    dbgprint(self.Token, "is the self token l")
                     return self.Token
                 end;
             }
@@ -1453,18 +1486,18 @@ function VisitAst(ast, visitors)
     end
 
     -- Helpers to call visitors on a node
-    local function preVisit(exprOrStat)
+    local function preVisit(exprOrStat, list)
         local visitor = visitors[exprOrStat.Type]
         if type(visitor) == 'function' then
-            return visitor(exprOrStat)
+            return visitor(exprOrStat, list)
         elseif visitor and visitor.Pre then
-            return visitor.Pre(exprOrStat)
+            return visitor.Pre(exprOrStat, list)
         end
     end
-    local function postVisit(exprOrStat)
+    local function postVisit(exprOrStat, list)
         local visitor = visitors[exprOrStat.Type]
         if visitor and type(visitor) == 'table' and visitor.Post then
-            return visitor.Post(exprOrStat)
+            return visitor.Post(exprOrStat, list)
         end
     end
 
@@ -1493,7 +1526,7 @@ function VisitAst(ast, visitors)
         elseif expr.Type == 'MethodExpr' or expr.Type == 'CallExpr' then
             visitExpr(expr.Base)
             if expr.FunctionArguments.CallType == 'ArgCall' then
-                for index, argExpr in pairs(expr.FunctionArguments.ArgList) do
+                for index, argExpr in ipairs(expr.FunctionArguments.ArgList) do
                     visitExpr(argExpr)
                 end
             elseif expr.FunctionArguments.CallType == 'TableCall' then
@@ -1506,7 +1539,7 @@ function VisitAst(ast, visitors)
         elseif expr.Type == 'ParenExpr' then
             visitExpr(expr.Expression)
         elseif expr.Type == 'TableLiteral' then
-            for index, entry in pairs(expr.EntryList) do
+            for index, entry in ipairs(expr.EntryList) do
                 if entry.EntryType == 'Field' then
                     visitExpr(entry.Value)
                 elseif entry.EntryType == 'Index' then
@@ -1524,53 +1557,56 @@ function VisitAst(ast, visitors)
         postVisit(expr)
     end
 
-    visitStat = function(stat)
-        if preVisit(stat) then
+    visitStat = function(stat, list)
+        if preVisit(stat, list) then
             -- Handler did custom child iteration or blocked child iteration
             return
         end
         if stat.Type == 'StatList' then
-            for index, ch in pairs(stat.StatementList) do
-                visitStat(ch)
+            for index, ch in ipairs(stat.StatementList) do
+                if list and list.Type == "Statlist" then
+                    error()
+                end
+                visitStat(ch, list)
             end
         elseif stat.Type == 'BreakStat' then
             -- No children to visit
         elseif stat.Type == 'ReturnStat' then
-            for index, expr in pairs(stat.ExprList) do
+            for index, expr in ipairs(stat.ExprList) do
                 visitExpr(expr)
             end
         elseif stat.Type == 'LocalVarStat' then
             if stat.Token_Equals then
-                for index, expr in pairs(stat.ExprList) do
+                for index, expr in ipairs(stat.ExprList) do
                     visitExpr(expr)
                 end
             end
         elseif stat.Type == 'LocalFunctionStat' then
-            visitStat(stat.FunctionStat.Body)
+            visitStat(stat.FunctionStat.Body, stat)
         elseif stat.Type == 'FunctionStat' then
-            visitStat(stat.Body)
+            visitStat(stat.Body, stat)
         elseif stat.Type == 'RepeatStat' then
-            visitStat(stat.Body)
+            visitStat(stat.Body, stat)
             visitExpr(stat.Condition)
         elseif stat.Type == 'GenericForStat' then
-            for index, expr in pairs(stat.GeneratorList) do
+            for index, expr in ipairs(stat.GeneratorList) do
                 visitExpr(expr)
             end
-            visitStat(stat.Body)
+            visitStat(stat.Body, stat)
         elseif stat.Type == 'NumericForStat' then
-            for index, expr in pairs(stat.RangeList) do
+            for index, expr in ipairs(stat.RangeList) do
                 visitExpr(expr)
             end
-            visitStat(stat.Body)
+            visitStat(stat.Body, stat)
         elseif stat.Type == 'WhileStat' then
             visitExpr(stat.Condition)
-            visitStat(stat.Body)
+            visitStat(stat.Body, stat)
         elseif stat.Type == 'DoStat' then
-            visitStat(stat.Body)
+            visitStat(stat.Body, stat)
         elseif stat.Type == 'IfStat' then
             visitExpr(stat.Condition)
-            visitStat(stat.Body)
-            for _, clause in pairs(stat.ElseClauseList) do
+            visitStat(stat.Body, stat)
+            for _, clause in ipairs(stat.ElseClauseList) do
                 if clause.Condition then
                     visitExpr(clause.Condition)
                 end
@@ -1579,16 +1615,16 @@ function VisitAst(ast, visitors)
         elseif stat.Type == 'CallExprStat' then
             visitExpr(stat.Expression)
         elseif stat.Type == 'AssignmentStat' then
-            for index, ex in pairs(stat.Lhs) do
+            for index, ex in ipairs(stat.Lhs) do
                 visitExpr(ex)
             end
-            for index, ex in pairs(stat.Rhs) do
+            for index, ex in ipairs(stat.Rhs) do
                 visitExpr(ex)
             end
         else
             assert(false, "unreachable")
         end	
-        postVisit(stat)
+        postVisit(stat, list)
     end
 
     if StatType[ast.Type] then
@@ -1622,15 +1658,48 @@ function AddVariableInfo(ast)
     local currentScope = rootscope
 
     -- Scope management
-    local function pushScope(Function)
+    local function pushScope(Function, FuncVar, Stat)
         local previousscope = currentScope
         currentScope = {
             ParentScope = currentScope;
             ChildScopeList = {};
+            UsedVars = {};
+            Statement = Stat or Function;
             VariableList = {};
             BeginLocation = markLocation();
         }
+		--[[
+		purpose of UsedVars:
+		 so we know not to predict constants if this functions scope is ever called
+		 example:
+			```lua
+			local lol = 1
+			local function wow(arb)
+					lol =  12
+			end
+
+			lol = 43
+			wow()
+			print(lol + 1)
+			```
+		 it assumes that lol is 43 so it simplifies `print(lol + 1)` into `print( 44)`
+		 but because we are calling `wow` and changing `lol` after the assignment,
+		 it would actually be 12 when we add 1.
+		 with this feature we add a true on the stack insigniating that the call expression
+		 effects this variable, so we are no longer certian of its value and should not simplify
+		]]
         currentScope.Function = Function or (previousscope and previousscope.Function);
+        if Function then
+            Function.Scope = currentScope
+        end
+
+        if FuncVar then -- true 
+            dbgprinttab(FuncVar)
+            if not FuncVar.Calls then
+                FuncVar.Calls = {}
+            end
+            FuncVar.FunctionScope = currentScope
+        end
         --previousscope = nil
         if currentScope.ParentScope then
             currentScope.Depth = currentScope.ParentScope.Depth + 1
@@ -1674,22 +1743,23 @@ function AddVariableInfo(ast)
     end
     pushScope({Type = "root", root = true}) -- push initial scope
 
-    -- Add / reference variables
-    local function addLocalVar(name, setNameFunc, localInfo)
+    -- Add / reference variables.
+    local function addLocalVar(name, setNameFunc, localInfo, LiteralVal)
         assert(localInfo, "Misisng localInfo")
         assert(name, "Missing local var name")
+        local startlocation = markLocation()
         local var = {
             Type = 'Local';
             Name = name;
             RenameList = {setNameFunc};
             AssignedTo = false;
-            Info = localInfo;
+            Info2 = localInfo;
             UseCount = 0;
-            IsConstant = false;
+            LiteralStack = {{LiteralVal, currentScope}}; --LiteralVal = &LiteralVal,
             Scope = currentScope;
-            BeginLocation = markLocation();
-            EndLocation = markLocation();
-            ReferenceLocationList = {markLocation()};
+            BeginLocation = startlocation;
+            EndLocation = startlocation;
+            ReferenceLocationList = {startlocation};
         }
 
         function var:AddType(type)
@@ -1720,7 +1790,6 @@ function AddVariableInfo(ast)
             Name = name;
             RenameList = {};
             AssignedTo = false;
-            InferredType = "any";
             UseCount = 0;
             Scope = nil; -- Globals have no scope
             BeginLocation = markLocation();
@@ -1743,7 +1812,12 @@ function AddVariableInfo(ast)
         assert(name, "Missing var name")
         local var = getGlobalVar(name)
         table.insert(var.RenameList, setNameFunc)
-        return var
+        local var2 = {
+            Info = var;
+            Location = markLocation();
+            Scope = currentScope;
+        }
+        return var2
     end
     local function getLocalVar(scope, name)
         -- First search this scope
@@ -1767,20 +1841,32 @@ function AddVariableInfo(ast)
         -- Then 
         return nil
     end
+    --Checks for var, if exists, is reference, else is a global.
     local function referenceVariable(name, setNameFunc)
         assert(name, "Missing var name")
         local var = getLocalVar(currentScope, name)
         if var then
             table.insert(var.RenameList, setNameFunc)
         else
-            var = addGlobalReference(name, setNameFunc)
+            return addGlobalReference(name, setNameFunc)
         end
         -- Update the end location of where this variable is used, and
         -- add this location to the list of references to this variable.
         local curLocation = markLocation()
         var.EndLocation = curLocation
+        dbgprinttab(var)
         table.insert(var.ReferenceLocationList, var.EndLocation)
-        return var
+        table.insert(currentScope.UsedVars, var)
+        local var2 = {
+            Info = var;
+            Location = curLocation;
+            Scope = currentScope;
+        }
+        return var2
+    end
+
+    local function updateusedvarscalls()
+
     end
 
     local visitor = {}
@@ -1795,7 +1881,7 @@ function AddVariableInfo(ast)
                 end, {
                     Type = 'Argument';
                     Index = index;
-                })
+                }, nil)
             end
         end;
         Post = function(expr)
@@ -1812,10 +1898,10 @@ function AddVariableInfo(ast)
     end
     visitor.StatList = {
         -- StatList adds a new scope
-        Pre = function(stat)
-            pushScope()
+        Pre = function(statlist, mainstat)
+            pushScope(nil, nil, mainstat)
         end;
-        Post = function(stat)
+        Post = function(statlist, mainstat)
             popScope()
         end;
     }
@@ -1832,7 +1918,7 @@ function AddVariableInfo(ast)
                     stat.VarList[varNum].Source = name
                 end, {
                     Type = 'Local';
-                })
+                }, expr)
             end		
         end;
     }
@@ -1841,24 +1927,49 @@ function AddVariableInfo(ast)
             -- Local function stat adds the function itself to the current scope as
             -- a local variable, and creates a new scope with the function arguments
             -- as local variables.
-            addLocalVar(stat.FunctionStat.NameChain[1].Source, function(name)
+            local var = addLocalVar(stat.FunctionStat.NameChain[1].Source, function(name)
                 stat.FunctionStat.NameChain[1].Source = name
             end, {
                 Type = 'LocalFunction';
-            })
-            pushScope(stat)
+            }, nil)
+            pushScope(stat, var)
             for index, ident in pairs(stat.FunctionStat.ArgList) do
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
                 end, {
                     Type = 'Argument';
                     Index = index;
-                })
+                }, nil)
             end
         end;
         Post = function()
             popScope()
         end;
+    }
+    visitor.CallExprStat = {
+        Post = function(stat)
+            local ex = stat.Expression.Base
+            local var = ex.Variable
+            if var and var.Info and ex.Token and ex.Token.Source then
+                dbgprint("we shall add it to the call!")
+                dbgprinttab(var)
+                if not var.Info.Calls then
+                    var.Info.Calls = {{stat, currentScope.Function.Scope.UsedVars}}
+                else
+                    table.insert(var.Info.Calls, {stat, currentScope.Function.Scope.UsedVars})
+                end
+                local scope = var.Info.FunctionScope
+                if scope and scope.UsedVars then
+                    local curlocation = ex.Variable.Location
+                    for i, var in ipairs(scope.UsedVars) do
+                        if var and var.Info then
+                            table.insert(currentScope.Function.Scope.UsedVars, var) --this also means we use the var too
+                            var.Info.LiteralStack[curlocation] = {stat, currentScope}
+                        end
+                    end
+                end
+            end
+        end
     }
     visitor.FunctionStat = {
         Pre = function(stat) 			
@@ -1868,31 +1979,45 @@ function AddVariableInfo(ast)
             -- the form `function foo()` with no additional dots/colons in the 
             -- name chain.
             local nameChain = stat.NameChain
-            print("the namechain is: ", nameChain, "oh and the stat is: ", stat)
-            local var;
-            if #nameChain == 1 then
-                -- If there is only one item in the name chain, then the first item
-                -- is a reference to a global variable.
-                var = addGlobalReference(nameChain[1].Source, function(name)
-                    nameChain[1].Source = name
-                end)
-            else
-                var = referenceVariable(nameChain[1].Source, function(name)
-                    nameChain[1].Source = name
-                end)
+            dbgprint("the namechain is: ", nameChain, "oh and the stat is: ", stat)
+            local var = referenceVariable(nameChain[1].Source, function(name)
+                nameChain[1].Source = name
+            end)
+            if var.Info then
+                var.Info.AssignedTo = true
             end
-            var.AssignedTo = true
-            pushScope(stat)
+            pushScope(stat, var.Info)
+            dbgprint("ok we have set it")
+            dbgprinttab(var)
+            stat.__varfunc = var
             for index, ident in pairs(stat.ArgList) do
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
                 end, {
                     Type = 'Argument';
                     Index = index;
-                })
+                }, nil)
             end
         end;
-        Post = function()
+        Post = function(stat)
+            local varfunc = currentScope.Statement
+            assert(varfunc, "no var func")
+            dbgprint("calls!")
+            dbgprinttab(varfunc.Info)
+            if varfunc.Info.FunctionScope then
+                local funcusedvars = varfunc.Info.FunctionScope.UsedVars --if you get an indexing error on this just apply some checks (pls work)
+                for _, data in ipairs(varfunc.Info.Calls) do
+                    --data: {callstat, callusedvars}
+                    local callusedvars = data[2]
+                    dbgprint("call used vars")
+                    dbgprinttab(callusedvars, 2)
+                    for _, usedvar in pairs(funcusedvars) do
+                        dbgprint("adding:", usedvar)
+                        table.insert(callusedvars, usedvar)
+                    end
+                end
+                varfunc = nil
+            end
             popScope()
         end;
     }
@@ -1905,15 +2030,15 @@ function AddVariableInfo(ast)
             for _, ex in pairs(stat.GeneratorList) do
                 VisitAst(ex, visitor)
             end
-            pushScope()
+            pushScope(nil,nil,stat)
             for index, ident in pairs(stat.VarList) do
-                print("generic for stat: varlist in the for stat idents be like: ", ident)
+                dbgprint("generic for stat: varlist in the for stat idents be like: ", ident)
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
                 end, {
                     Type = 'ForRange';
                     Index = index;
-                })
+                }, nil)
             end
             VisitAst(stat.Body, visitor)
             popScope()
@@ -1929,15 +2054,15 @@ function AddVariableInfo(ast)
             for _, ex in pairs(stat.RangeList) do
                 VisitAst(ex, visitor)
             end
-            pushScope()
+            pushScope(nil,nil,stat)
             for index, ident in pairs(stat.VarList) do
-                print("numeric for stat: varlist in the for stat idents be like: ", ident)
+                dbgprint("numeric for stat: varlist in the for stat idents be like: ", ident)
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
                 end, {
                     Type = 'ForRange';
                     Index = index;
-                })
+                }, ident)
             end
             VisitAst(stat.Body, visitor)
             popScope()
@@ -1950,34 +2075,42 @@ function AddVariableInfo(ast)
             -- "assigned to" flag on variables.
             for i, ex in pairs(stat.Lhs) do
                 if ex.Variable then
-                    ex.Variable.AssignedTo = true
-                    --print("ex is: ", ex)
-                end
-            end
-        end;
-    }
-    visitor.ReturnStat = {
-        Post = function(stat)
-            local AncestorFunction = currentScope.Function
-            if AncestorFunction then
-                local returntypes
-                for i, expr in stat.ExprList do
-                    if expr then
-                        if expr.Type == "VariableExpr" then
-                            returntypes[i] = expr.Type
-                        else
-                            returntypes[i] = expr.Type
-                        end
+                    table.insert(currentScope.Function.Scope.UsedVars, ex.Variable)
+                    local curlocation = ex.Variable.Location
+                    ex.Variable.Info.AssignedTo = true
+                    local rhsval = stat.Rhs[i]
+                    if rhsval.Type ~= "BinopExpr" then
+                        ex.Variable.Info.LiteralStack[curlocation] = {rhsval, currentScope}
                     end
+                    --ex.Variable.LiteralVal = stat.Rhs[i]
                 end
-                if not AncestorFunction.ReturnTypes then
-                    AncestorFunction.ReturnTypes = {}
-                end
-                table.insert(AncestorFunction.ReturnTypes, returntypes)
-                print("returned :", stat, "and our function var is:", AncestorFunction)
             end
         end;
     }
+	--[[
+	visitor.ReturnStat = {
+		Post = function(stat)
+			local AncestorFunction = currentScope.Function
+			if AncestorFunction then
+				local returntypes
+				for i, expr in ipairs(stat.ExprList) do
+					if expr then
+						if expr.Type == "VariableExpr" then
+							returntypes[i] = expr.Type
+						else
+							returntypes[i] = expr.Type
+						end
+					end
+				end
+				if not AncestorFunction.ReturnTypes then
+					AncestorFunction.ReturnTypes = {}
+				end
+				table.insert(AncestorFunction.ReturnTypes, returntypes)
+				print("returned :", stat, "and our function var is:", AncestorFunction)
+			end
+		end;
+	}
+	]]
 
     VisitAst(ast, visitor)
 
@@ -2010,7 +2143,7 @@ local function FormatAst(ast)
     end
 
     local function leadingChar(tk)
-        --print("TOKEN:" , tk)
+        dbgprint("TOKEN:" , tk)
         if #tk.LeadingWhite > 0 then
             return tk.LeadingWhite:sub(1,1)
         else
@@ -2025,10 +2158,7 @@ local function FormatAst(ast)
     end
 
     local function padExpr(expr)
-        --print("PADDING EXPR: ", expr)
-        if expr:GetFirstToken() then
-            padToken(expr:GetFirstToken()) --used to do `expr:GetFirstToken()`
-        end
+        padToken(expr:GetFirstToken() or expr.Token or dbgprint("couldnt get a token -->", expr)) --used to do `expr:GetFirstToken()`
     end
 
     local function formatBody(openToken, bodyStat, closeToken)
@@ -2049,6 +2179,7 @@ local function FormatAst(ast)
                 padToken(expr.Token_Op)
             end
         elseif expr.Type == 'UnopExpr' then
+            --a.r = lol
             formatExpr(expr.Rhs)
             --(expr.Token_Op)
         elseif expr.Type == 'NumberLiteral' or expr.Type == 'StringLiteral' or 
@@ -2284,7 +2415,7 @@ local function FormatAst(ast)
             formatBody(stat.Token_Do, stat.Body, stat.Token_End)
         elseif stat.Type == 'IfStat' then
             --(stat.Token_If)
-            print(stat.Condition)
+            --print(stat.Condition)
             formatExpr(stat.Condition)
             padExpr(stat.Condition)
             padToken(stat.Token_Then)
@@ -2334,7 +2465,7 @@ local function FormatAst(ast)
         end	
     end
     formatStat(ast)
-    print("RESULT AST: ", ast)
+    dbgprint("RESULT AST: ", ast)
     return ast
 end
 
@@ -2359,35 +2490,38 @@ local function StripAst(ast)
         if token.Source ~= "(" then
             token.LeadingWhite = ''
         else
-            print("Spotted ambigous syntax token `(`, adding semicolon..")
+            dbgprint("Spotted ambigous syntax token `(`, adding semicolon..")
             token.LeadingWhite = ';'
         end
     end
 
     -- Make to adjacent tokens as close as possible
     local function joint(tokenA, tokenB)
-        -- Strip the second token's whitespace
-        stript(tokenB)
-
         -- Get the trailing A <-> leading B character pair
         local lastCh = tokenA.Source:sub(-1, -1)
         local firstCh = tokenB.Source:sub(1, 1)
 
         -- Cases to consider:
         --  Touching minus signs -> comment: `- -42` -> `--42' is invalid
+        --  Touching dots: `.. .5` -> `...5` is invalid
         --  Touching words: `a b` -> `ab` is invalid
         --  Touching digits: `2 3`, can't occurr in the Lua syntax as number literals aren't a primary expression
         --  Abiguous syntax: `f(x)\n(x)()` is already disallowed, we can't cause a problem by removing newlines
+        --  `>` `=` cannot be merged, because they will become a `>=` token.
 
         -- Figure out what separation is needed
-        if (lastCh == '-' and firstCh == '-') or --anti touching minus
-            (AllIdentChars[lastCh] and AllIdentChars[firstCh]) --anti touching ident
+        if 
+            (lastCh == '-' and firstCh == '-') or
+            (lastCh == '>' and firstCh == '=') or
+            (lastCh == '.' and firstCh == '.') or
+            (AllIdentChars[lastCh] and AllIdentChars[firstCh]) 
         then
             tokenB.LeadingWhite = ' ' -- Use a separator
         else
             tokenB.LeadingWhite = '' -- Don't use a separator
         end
     end
+
     -- Join up a statement body and it's opening / closing tokens
     local function bodyjoint(open, body, close)
         stripStat(body)
@@ -2434,7 +2568,7 @@ local function StripAst(ast)
             stripExpr(expr.Index)
             stript(expr.Token_CloseBracket)
         elseif expr.Type == 'MethodExpr' or expr.Type == 'CallExpr' then
-            print("leads:", leadsstatment)
+            dbgprint("leads:", leadsstatment)
             stripExpr(expr.Base, leadsstatment)
             if expr.Type == 'MethodExpr' then
                 stript(expr.Token_Colon)
@@ -2743,7 +2877,7 @@ local function StripAst(ast)
 
     stripStat(ast)
 
-    print("finished ast", ast)
+    dbgprint("finished ast", ast)
 
     return ast
 end
@@ -3355,7 +3489,7 @@ function StringAst(ast)
 end
 
 --Solve the Solveable math in an ast
-local function SolveMath(ast)
+local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
     local ast = ast
     local canSolve = {
         NumberLiteral = true,
@@ -3366,6 +3500,14 @@ local function SolveMath(ast)
         TableLiteral = true,
         ParenExpr = true,
         BinopExpr = true
+    }
+
+    local replaceTypes = {
+        NumberLiteral = true,
+        BooleanLiteral = true,
+        StringLiteral = true,
+        HashLiteral = true,
+        NilLiteral = true,
     }
 
     local function isfinite(num)
@@ -3386,11 +3528,11 @@ local function SolveMath(ast)
                 LeadingWhite = (noleadingwhite and "" or " "),
                 Source = val
             },
-            GetFirstToken = function()
-                return (noleadingwhite and val:sub(1,1) or " ")
+            GetFirstToken = function(self)
+                return self.Token --(noleadingwhite and tostring(val):sub(1,1) or " ")
             end,
-            GetLastToken = function()
-                return " "
+            GetLastToken = function(self)
+                return self.Token
             end
         }
     end
@@ -3425,6 +3567,7 @@ local function SolveMath(ast)
         }
     end
 
+    --replace without making a new variable, as tables are all "references", replace all of b into a
     local function replace(a, b)
         if b == nil then return end
         for i, v in pairs(b) do
@@ -3471,35 +3614,113 @@ local function SolveMath(ast)
         end
     end
 
+    --solve a possible codepath within a function
+    local function getvarwithcodepath(expr, scope)
+        local parentalstack = {} --Place the parents into a stack
+        local currentscope = scope
+        while currentscope.ParentScope do
+            table.insert(parentalstack, 1, currentscope.ParentScope)
+            currentscope = currentscope.ParentScope
+        end
+        --print("parentalstack:")
+        --printtab(parentalstack)
+    end
+
+    local function solvevarexpr(expr)
+        local var = expr.Variable
+        if solveconstants and var and var.Info then
+            dbgprint("literal", var.Location, var.Info.LiteralStack)
+            dbgprinttab(var.Info.LiteralStack)
+            --getvarwithcodepath(expr, var.Scope)
+            local location = var.Location
+            local literalfound, literalscope
+            while true do
+                local data = var.Info.LiteralStack[location]
+                if data then
+                    literalfound, literalscope = data[1], data[2]
+                    if literalfound.Type == "CallExprStat" or literalfound.Type == "CallExpr" then
+                        dbgprint("is call, voiding..")
+                        return
+                    end
+                    if not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
+                        dbgprint("lower Scope, nvm..")
+                        --return
+                    else
+                        break
+                    end
+                elseif location <= 0 then
+                    dbgprint("not found")
+                    break
+                end
+                location = location - 1
+            end
+
+            --true means its voided, most likley due to a call to a function that effects this variable, which we cant predict greatly.
+            --not finding a literal also returns, and if we dont have it in replacetypes
+            if not literalfound then
+                dbgprint("non existant")
+                return
+            end
+
+            dbgprint("found the literal:", literalfound)
+            --printtab(literalfound, 2)
+
+            if literalfound then -- if not var.AssignedTo and var.LiteralVal then
+                if literalfound.Type == "VariableExpr" then
+                    return solvevarexpr(literalfound)
+                else
+                    dbgprint("the stack:")
+                    dbgprinttab(var.Info.LiteralStack)
+                    if replaceconstants and count(var.Info.LiteralStack) <= 1 then --solving point!!
+                        replace(expr, literalfound)
+                    end
+                    return literalfound
+                end
+            end
+        end
+    end
 
     local function solvebinop(operator, left1, right1, leadingwhite)
-        --warn("MATHSOLVE: SOLVING BINOP: ", operator, left1, right1)
+        --task.wait()
+        dbgprint("MATHSOLVE: SOLVING BINOP: ",operator,left1,right1)
         local lhs = left1
         local rhs = right1
         if type(left1) == "table" and left1.Type == "ParenExpr" then lhs = left1.Expression end
         if type(right1) == "table" and right1.Type == "ParenExpr" then rhs = right1.Expression end
 
-        if lhs == nil or rhs == nil or lhs.Type == nil or rhs.Type == nil then return end
+        --print("types:", lhs and lhs.Type, rhs and rhs.Type)
 
+        do --Unknown variables solving
+            if lhs.Type == "VariableExpr" then
+                lhs = solvevarexpr(lhs)
+            end
 
-        ---Voids
-
-        --Returns could vary
-        if lhs.Type == "CallExpr" or rhs.Type == "CallExpr" then
-            return
+            if rhs.Type == "VariableExpr" then
+                rhs = solvevarexpr(rhs)
+            end
         end
+        do --Voids
+            if
+                lhs == nil or rhs == nil --Must exist
+                or lhs.Type == nil or rhs.Type == nil
+            then
+                return
+            end
 
-        --Always solve lower binops first!
-        if lhs.Type == "BinopExpr" or rhs.Type == "BinopExpr" then
-            return
-        end
+            --Returns could vary
+            if lhs.Type == "CallExpr" or rhs.Type == "CallExpr" then
+                return
+            end
 
-        --Unknown variables
-        if lhs.Type == "VariableExpr" then
+            --Always solve lower binops first!
+            if lhs.Type == "BinopExpr" or rhs.Type == "BinopExpr" then
+                return
+            end
 
-            return
-        elseif rhs.Type == "VariableExpr" then
-            return
+            --We still have variables even after solving..
+            if lhs.Type == "VariableExpr" or rhs.Type == "VariableExpr" then
+                return
+            end
         end
 
         local a = (lhs.Token or (lhs.Expression and lhs.Expression.Token)) or nil
@@ -3551,7 +3772,8 @@ local function SolveMath(ast)
             if operator == ">=" then val = left >= right end
             if operator == "<=" then val = left <= right end
 
-            if type(val) == "boolean" or (type(val) == "number" and isfinite(val) and val > -(10 ^ 6) and val < 10 ^ 6) then
+            if type(val) == "boolean" or (type(val) == "number" and isfinite(val) and val > -(10 ^ 52) and val < 10 ^ 52) then
+                --print("returns:", val)
                 return val
             end
         end
@@ -3637,31 +3859,37 @@ local function SolveMath(ast)
         end
     end
 
-    local function solveExpr(expr)
+    local solveStat, solveExpr;
+
+    function solveExpr(expr)
         --warn("MATHSOLVE: SOLVING EXPR: ", expr)
         if expr.Type == "BinopExpr" then
             solveExpr(expr.Lhs)
             solveExpr(expr.Rhs)
 
             if expr.Lhs ~= nil and expr.Rhs ~= nil then
+                local firsttoken = expr:GetFirstToken()
                 local tokenOp = expr.Token_Op
 
-                if tokenOp ~= nil and tokenOp.Source ~= nil then
+                if tokenOp ~= nil and tokenOp.Source ~= nil and firsttoken then
                     local val = solvebinop(tokenOp.Source, expr.Lhs, expr.Rhs)
+
+                    dbgprint("returns of binop solve:")
+                    dbgprinttab(val)
 
                     if val ~= nil then
                         if type(val) == "boolean" then
-                            local b = createtype("BooleanLiteral", tostring(val), "Keyword", #tokenOp.LeadingWhite <= 0)
+                            local b = createtype("BooleanLiteral", tostring(val), "Keyword", #firsttoken.LeadingWhite <= 0)
                             replace(expr, b)
                             return
                         elseif type(val) == "number" then
                             if isfinite(val) then
-                                local num = createtype("NumberLiteral", tostring(val), "Number", #tokenOp.LeadingWhite <= 0)
+                                local num = createtype("NumberLiteral", tostring(val), "Number", #firsttoken.LeadingWhite <= 0)
                                 replace(expr, num)
                                 return
                             end
                         elseif type(val) == "string" then
-                            local str = createtype("StringLiteral", val, "String", #tokenOp.LeadingWhite <= 0)
+                            local str = createtype("StringLiteral", val, "String", #firsttoken.LeadingWhite <= 0)
                             replace(expr, str)
                             return
                         elseif type(val) == "table" then
@@ -3688,7 +3916,7 @@ local function SolveMath(ast)
                 end
             end
         elseif expr.Type == "UnopExpr" then
-            solveExpr(expr.Rhs)
+            --solveExpr(expr.Rhs)
 
             if expr.Rhs ~= nil and canSolve[expr.Rhs.Type] == true then
                 local tokenOp = expr.Token_Op
@@ -3731,7 +3959,7 @@ local function SolveMath(ast)
                         int[#int + 1] = part
                     end	
                     if #int == 2 then
-                        print("EXPONENT: ", token.Source)
+                        dbgprint("EXPONENT: ", token.Source)
                         local l = tonumber(int[1])
                         local r = tonumber(int[2])
                         if l and r then
@@ -3774,15 +4002,37 @@ local function SolveMath(ast)
                     assert(false, "unreachable")
                 end
             end
-        else
+        elseif expr.Type == "CallExpr" or expr.Type == "MethodExpr" then
+            warn('call expor:', expr)
+            if expr.FunctionArguments then
+                if expr.FunctionArguments.ArgList then
+                    for i, ch in ipairs(expr.FunctionArguments.ArgList) do
+                        if ch == nil or ch.Type == nil then
+                            return
+                        end
+                        warn("solve arg2", ch)
+                        solveExpr(ch)
+                    end
+                end
+            end
+        elseif expr.Type == "FunctionLiteral" then
+            dbgprint("solving literal func", expr.Body)
+            solveStat(expr.Body)
+        elseif expr.Type == "ParenExpr" then
+            dbgprint("paren expr!")
+            --solveStat(expr.Body)
         end
     end
 
-    local function solveStat(stat)
+    function solveStat(stat)
         if stat.Type == "StatList" then
             for i, ch in ipairs(stat.StatementList) do
                 if ch == nil or ch.Type == nil then
                     return
+                end
+
+                ch.NewStat = function(Stat, RelativePos)
+                    table.insert(stat.StatementList, i + RelativePos, Stat)
                 end
 
                 ch.Remove = function()
@@ -3801,11 +4051,9 @@ local function SolveMath(ast)
                     --print(leadwhite)
 
                     stat.StatementList[i] = nil
-                end
+                end	
 
-                ch.Set = function(newstat)
-                    stat.StatementList[i] = newstat
-                end
+                dbgprint("--- ! stat:", ch)
 
                 solveStat(ch)
             end
@@ -3820,6 +4068,7 @@ local function SolveMath(ast)
         elseif stat.Type == "LocalVarStat" then
             if stat.Token_Equals ~= nil then
                 for i, expr in ipairs(stat.ExprList) do
+                    dbgprint("solve lodec expr:",  expr)
                     solveExpr(expr)
                 end
             end
@@ -3911,10 +4160,10 @@ local function SolveMath(ast)
                 end
             end
         elseif stat.Type == "IfStat" then
-            print("CONDIT IFSTAT BEFORE: ", stat.Condition)
+            --print("CONDIT IFSTAT BEFORE: ", stat.Condition)
 
             solveExpr(stat.Condition)
-            print("CONDIT IFSTAT BEFORE2: ", stat.Condition)
+            --print("CONDIT IFSTAT BEFORE2: ", stat.Condition)
             solveStat(stat.Body)
             for i, clause in ipairs(stat.ElseClauseList) do
                 if clause.Condition ~= nil then
@@ -3927,16 +4176,73 @@ local function SolveMath(ast)
             if condition.Type == "ParenExpr" then
                 condition = condition.Expression
             end
-            if condition.Type == "BooleanLiteral" then
-                print("CONDIT IFSTAT: ", condition)
+            if condition.Type == "BooleanLiteral" and solveifstats then
                 if condition.Token.Source == "false" then --its useless what lol
-                    return stat.Remove()
+                    if stat.ElseClauseList then
+                        if #stat.ElseClauseList > 1 then
+                            if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
+                                local newifstat = clone(stat)
+
+                                --replace clause information
+                                local firstelseclause = newifstat.ElseClauseList[1]
+
+                                --newifstat.Token_Then = firstelseclause.Token_Then
+                                newifstat.Body = firstelseclause.Body
+                                newifstat.Condition = firstelseclause.Condition
+                                table.remove(newifstat.ElseClauseList, 1)
+
+                                stat.Remove()
+                                return stat.NewStat(newifstat, 1)
+                            end
+                        else
+                            local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
+                            if lastclause and not lastclause.Condition then
+                                dbgprint("Attempting to replace token")
+                                --Replace last elseclause as the main will always be performed.
+                                replace(stat, { --__here
+                                    Type = 'DoStat';
+                                    Body = lastclause.Body;
+                                    Token_Do = {
+                                        LeadingWhite = lastclause.Token.LeadingWhite or "",
+                                        Source = "do",
+                                        Type = "Keyword"
+                                    };
+                                    GetFirstToken = function(self)
+                                        return self.Token_Do
+                                    end;
+                                    GetLastToken = function(self)
+                                        return self.Token_End
+                                    end;
+                                })
+                            end
+                        end
+                    end
                 elseif condition.Token.Source == "true" then
-                    return replace(stat, { --__here
+					--[[ --My dumb ahh just realized all this is useless...
+					if stat.ElseClauseList then
+						if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
+							local newifstat = copy(stat)
+	
+							--replace clause information
+							local firstelseclause = newifstat.ElseClauseList[1]
+							--newifstat.Token_Then = firstelseclause.Token_Then
+							newifstat.Body = firstelseclause.Body
+							newifstat.Condition = firstelseclause.Condition
+							table.remove(newifstat.ElseClauseList, 1)
+	
+							stat.NewStat(newifstat, 1)
+						end
+						local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
+						if lastclause and not lastclause.Condition then
+							table.remove(stat.ElseClauseList) --Remove last elseclause, as the else will never be performed.
+						end
+					end
+					]]
+                    replace(stat, { --__here
                         Type = 'DoStat';
                         Body = stat.Body;
                         Token_Do = {
-                            LeadingWhite = stat.Token_If.LeadingWhite,
+                            LeadingWhite = stat.Token_If.LeadingWhite or "",
                             Source = "do",
                             Type = "Keyword"
                         };
@@ -3948,37 +4254,56 @@ local function SolveMath(ast)
                         end;
                     })
                 end
-                if #stat.ElseClauseList >= 1 or condition == nil or condition.Token == nil or condition.Token.Source ~= "false" then
-                else
-                end
             elseif condition.Type == "NilLiteral" then
                 return stat.Remove()
             end
-        elseif stat.Type == "CallExprStat" then
-            print("call expr")
-            printtab(stat)
-            printtab(stat.Expression)
-            if stat.Expression.FunctionArguments then
-                if stat.Expression.FunctionArguments.ArgList then
-                    for i, ch in ipairs(stat.Expression.FunctionArguments.ArgList) do
-                        if ch == nil or ch.Type == nil then
-                            return
+
+            if solveifstats then
+                for i = 1, #stat.ElseClauseList do
+                    local clause = stat.ElseClauseList[i]
+                    if clause then
+                        local condition = clause.Condition
+                        if condition and condition.Token and stat.ElseClauseList[i].Token then
+                            if condition.Token.Source == "true" then
+                                repeat
+                                    table.remove(stat.ElseClauseList, i + 1)
+                                until not stat.ElseClauseList[i + 1]
+                                stat.ElseClauseList[i].Condition = nil
+                                stat.ElseClauseList[i].ClauseType = "else"
+                                stat.ElseClauseList[i].Token.Source = "else"
+                            elseif condition.Token.Source == "false" then
+                                table.remove(stat.ElseClauseList, i)
+                            else
+                                error("invalid source to boolean value")
+                            end
                         end
-                        solveExpr(ch)
                     end
                 end
             end
+        elseif stat.Type == "CallExprStat" then
+            warn("call expr", stat.Expression.Base.Token and stat.Expression.Base.Token.Source or "UNKNOWN", stat)
+            solveExpr(stat.Expression)
         elseif stat.Type == "CompoundStat" then
             solveExpr(stat.Lhs)
             solveExpr(stat.Rhs)
         elseif stat.Type == "AssignmentStat" then
-            for i, ex in ipairs(stat.Lhs) do
+            for i, ex in pairs(stat.Lhs) do
                 solveExpr(ex)
             end
             for i, ex in ipairs(stat.Rhs) do
                 solveExpr(ex)
+                local lhsval = stat.Lhs[i]
+                local rhsval = ex
+                if lhsval.Variable then
+                    local curlocation = lhsval.Variable.Location
+                    if rhsval.Type ~= "BinopExpr" then
+                        lhsval.Variable.Info.LiteralStack[curlocation] = {rhsval, lhsval.Variable.Scope}
+                    end
+                    --ex.Variable.LiteralVal = stat.Rhs[i]
+                end
             end
         else
+            error("unfound: "..tostring(stat.Type))
         end
     end
 
@@ -3995,16 +4320,16 @@ local function minify(src)
     return StringAst(result)
 end
 
-local function beautify(src)
-    print("working")
+local function beautify(src, ...)
+    dbgprint("working")
     local ast = CreateLuaParser(src)
-    print("my ast is ", ast)
+    dbgprint("my ast is ", ast)
     local global_scope, root_scope = AddVariableInfo(ast)
-    print("scopes:", global_scope, root_scope)
+    dbgprint("scopes:", global_scope, root_scope)
     --BeautifyVariables(global_scope, root_scope)
-    print("my ast2 is ", ast)
-    local result = FormatAst(SolveMath(ast))
-    print("my result is ", result)
+    dbgprint("my ast2 is ", ast)
+    local result = FormatAst(SolveMath(ast, ...)) --solveconstants: boolean, solveifstats: boolean, replaceconstants: boolean
+    dbgprint("my result is ", result)
     return StringAst(result)
 end
 
