@@ -1,19 +1,10 @@
 local LML = require("LuamininLua")
 
-local result = LML.beautify ([[
-    local x = 12 --haha
-    local wow
-    local function awe()
-        wow()
-    end
-    function wow()
-        x = 32 --troll
-        print("hey")
-        --local wow = "ew"
-    end
-    awe()
-    print(x + 1) -- 33
-]], true, true, true)
+io.input("Test.lua")
+
+local testsrc = io.read("*a")
+
+local result = LML.beautify(testsrc, false, true, true, true, true, true)
 
 print("-----------------")
 print(result)

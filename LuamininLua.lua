@@ -2,6 +2,7 @@
 
 MIT License
 
+Copyright (c) 2017 Mark Langen
 Copyright (c) 2024 all_clients (ROBLOX Userid: 852643438)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -56,6 +57,17 @@ end or function (...) end
 local function clone(a)
     local b = {}
     for i,v in pairs(a) do
+        b[i] = v
+    end
+    return b
+end
+
+local function clonedeep(a)
+    local b = {}
+    for i,v in pairs(a) do
+        if type(v) == "table" then
+            v = clonedeep(v)
+        end
         b[i] = v
     end
     return b
@@ -143,6 +155,10 @@ function FormatTable(tb, ignoreFunc)
         return false 
     end
     return FormatTableInt(tb, 0, ignoreFunc)
+end
+
+FormatTable = function (a)
+    return dump(a)
 end
 
 local WhiteChars = lookupify{' ', '\n', '\t', '\r'}
@@ -1548,11 +1564,11 @@ function VisitAst(ast, visitors)
                 elseif entry.EntryType == 'Value' then
                     visitExpr(entry.Value)
                 else
-                    assert(false, "unreachable")
+                    error("unreachable")
                 end
             end
         else
-            assert(false, "unreachable, type: "..expr.Type..":"..FormatTable(expr))
+            error("unreachable, type: "..expr.Type..":"..FormatTable(expr))
         end
         postVisit(expr)
     end
@@ -1622,7 +1638,7 @@ function VisitAst(ast, visitors)
                 visitExpr(ex)
             end
         else
-            assert(false, "unreachable")
+            error("unreachable")
         end	
         postVisit(stat, list)
     end
@@ -1748,6 +1764,8 @@ function AddVariableInfo(ast)
         assert(localInfo, "Misisng localInfo")
         assert(name, "Missing local var name")
         local startlocation = markLocation()
+        dbgprint("edt45g")
+        dbgprinttab(LiteralVal,1)
         local var = {
             Type = 'Local';
             Name = name;
@@ -1785,10 +1803,12 @@ function AddVariableInfo(ast)
                 return var
             end
         end
+        --if not found then try to make a global var then return that
         local var = {
             Type = 'Global';
             Name = name;
             RenameList = {};
+            LiteralStack = {}; --LiteralVal = &LiteralVal,
             AssignedTo = false;
             UseCount = 0;
             Scope = nil; -- Globals have no scope
@@ -1951,13 +1971,15 @@ function AddVariableInfo(ast)
             local ex = stat.Expression.Base
             local var = ex.Variable
             if var and var.Info and ex.Token and ex.Token.Source then
-                dbgprint("we shall add it to the call!")
-                dbgprinttab(var)
+                dbgprint("call expr thing!")
+                dbgprinttab(stat)
                 if not var.Info.Calls then
                     var.Info.Calls = {{stat, currentScope.Function.Scope.UsedVars}}
                 else
                     table.insert(var.Info.Calls, {stat, currentScope.Function.Scope.UsedVars})
                 end
+                dbgprint("functions info:")
+                dbgprinttab(var.Info)
                 local scope = var.Info.FunctionScope
                 if scope and scope.UsedVars then
                     local curlocation = ex.Variable.Location
@@ -1989,7 +2011,6 @@ function AddVariableInfo(ast)
             pushScope(stat, var.Info)
             dbgprint("ok we have set it")
             dbgprinttab(var)
-            stat.__varfunc = var
             for index, ident in pairs(stat.ArgList) do
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
@@ -2000,11 +2021,10 @@ function AddVariableInfo(ast)
             end
         end;
         Post = function(stat)
-            local varfunc = currentScope.Statement
+            local varfunc = stat.Scope.Statement
             assert(varfunc, "no var func")
             dbgprint("calls!")
-            dbgprinttab(varfunc.Info)
-            if varfunc.Info.FunctionScope then
+            if varfunc.Info and varfunc.Info.FunctionScope then
                 local funcusedvars = varfunc.Info.FunctionScope.UsedVars --if you get an indexing error on this just apply some checks (pls work)
                 for _, data in ipairs(varfunc.Info.Calls) do
                     --data: {callstat, callusedvars}
@@ -2055,14 +2075,15 @@ function AddVariableInfo(ast)
                 VisitAst(ex, visitor)
             end
             pushScope(nil,nil,stat)
+            dbgprint("numeric for stat")
+            dbgprinttab(stat)
             for index, ident in pairs(stat.VarList) do
-                dbgprint("numeric for stat: varlist in the for stat idents be like: ", ident)
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
                 end, {
                     Type = 'ForRange';
                     Index = index;
-                }, ident)
+                }, nil) --stat.RangeList[1])
             end
             VisitAst(stat.Body, visitor)
             popScope()
@@ -2265,7 +2286,7 @@ local function FormatAst(ast)
                         formatExpr(entry.Value)
                         applyIndent(entry.Value:GetFirstToken())
                     else
-                        assert(false, "unreachable")
+                        error("unreachable")
                     end
                     local sep = expr.Token_SeparatorList[index]
                     if sep then
@@ -2277,7 +2298,7 @@ local function FormatAst(ast)
             end
             --(expr.Token_CloseBrace)
         else
-            assert(false, "unreachable, type: "..expr.Type..":"..FormatTable(expr))
+            error("unreachable, type: "..expr.Type..":"..FormatTable(expr))
         end
     end
 
@@ -2461,7 +2482,7 @@ local function FormatAst(ast)
                 end
             end
         else
-            assert(false, "unreachable")
+            error("unreachable")
         end	
     end
     formatStat(ast)
@@ -2624,7 +2645,7 @@ local function StripAst(ast)
                 elseif entry.EntryType == 'Value' then
                     stripExpr(entry.Value)
                 else
-                    assert(false, "unreachable")
+                    error("unreachable")
                 end
                 local sep = expr.Token_SeparatorList[index]
                 if sep then
@@ -2633,7 +2654,7 @@ local function StripAst(ast)
             end
             stript(expr.Token_CloseBrace)
         else
-            assert(false, "unreachable, type: "..expr.Type..":"..FormatTable(expr))
+            error("unreachable, type: "..expr.Type..":"..FormatTable(expr))
         end
     end
 
@@ -2868,7 +2889,7 @@ local function StripAst(ast)
                 end
             end
         else
-            assert(false, "unreachable")
+            error("unreachable")
         end
         if stat.Type ~= "StatList" then
 
@@ -2903,18 +2924,7 @@ local function indexToVarName(index)
     end
     return id
 end
-local function genNextVarName()
-    local varToUse = idGen
-    idGen = idGen + 1
-    return indexToVarName(varToUse)
-end
-local function genVarName()
-    local varName = ''
-    repeat
-        varName = genNextVarName()
-    until not Keywords[varName]
-    return varName
-end
+
 local function MinifyVariables(globalScope, rootScope)
     -- externalGlobals is a set of global variables that have not been assigned to, that is
     -- global variables defined "externally to the script". We are not going to be renaming 
@@ -3129,7 +3139,7 @@ local function MinifyVariables_2(globalScope, rootScope)
 							end
 						end
 					else
-						assert(false, "unreachable")
+						error("unreachable")
 					end
 				end
 			end
@@ -3195,12 +3205,12 @@ local function BeautifyVariables(globalScope, rootScope)
     local function modify(scope)
         for _, var in pairs(scope.VariableList) do
             local name = 'L_'..localNumber..'_'
-            if var.Info.Type == 'Argument' then
-                name = name..'arg'..var.Info.Index
-            elseif var.Info.Type == 'LocalFunction' then
+            if var.Info2.Type == 'Argument' then
+                name = name..'arg'..var.Info2.Index
+            elseif var.Info2.Type == 'LocalFunction' then
                 name = name..'func'
-            elseif var.Info.Type == 'ForRange' then
-                name = name..'forvar'..var.Info.Index
+            elseif var.Info2.Type == 'ForRange' then
+                name = name..'forvar'..var.Info2.Index
             end
             setVarName(var, name)
             localNumber = localNumber + 1
@@ -3306,7 +3316,7 @@ function StringAst(ast)
                 elseif entry.EntryType == 'Value' then
                     printExpr(entry.Value)
                 else
-                    assert(false, "unreachable")
+                    error("unreachable")
                 end
                 local sep = expr.Token_SeparatorList[index]
                 if sep then
@@ -3315,7 +3325,7 @@ function StringAst(ast)
             end
             printt(expr.Token_CloseBrace)
         else
-            assert(false, "unreachable, type: "..expr.Type..":"..FormatTable(expr))
+            error("unreachable, type: "..expr.Type..":"..FormatTable(expr))
         end
     end
 
@@ -3479,7 +3489,7 @@ function StringAst(ast)
                 end
             end
         else
-            assert(false, "unreachable")
+            error("unreachable")
         end
     end
 
@@ -3489,7 +3499,7 @@ function StringAst(ast)
 end
 
 --Solve the Solveable math in an ast
-local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
+local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, solveindexes)
     local ast = ast
     local canSolve = {
         NumberLiteral = true,
@@ -3626,7 +3636,13 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
         --printtab(parentalstack)
     end
 
-    local function solvevarexpr(expr)
+    --determines if a expression is safe to replace if the stack is no more than 1
+    local function safetoreplace(literalstack)  --solving point!!
+        return count(literalstack) <= 1
+    end
+
+    --attempt to resolve the literal from a variable
+    local function resolveliteral(expr, noreplace)
         local var = expr.Variable
         if solveconstants and var and var.Info then
             dbgprint("literal", var.Location, var.Info.LiteralStack)
@@ -3638,15 +3654,17 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
                 local data = var.Info.LiteralStack[location]
                 if data then
                     literalfound, literalscope = data[1], data[2]
-                    if literalfound.Type == "CallExprStat" or literalfound.Type == "CallExpr" then
-                        dbgprint("is call, voiding..")
-                        return
-                    end
-                    if not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
-                        dbgprint("lower Scope, nvm..")
-                        --return
-                    else
-                        break
+                    if literalfound then
+                        if literalfound.Type == "CallExprStat" or literalfound.Type == "CallExpr" then
+                            dbgprint("is call, voiding..")
+                            return
+                        end
+                        if not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
+                            dbgprint("lower Scope, nvm..")
+                            --return --dont return just continue
+                        else
+                            break
+                        end
                     end
                 elseif location <= 0 then
                     dbgprint("not found")
@@ -3656,26 +3674,25 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
             end
 
             --true means its voided, most likley due to a call to a function that effects this variable, which we cant predict greatly.
-            --not finding a literal also returns, and if we dont have it in replacetypes
-            if not literalfound then
-                dbgprint("non existant")
-                return
-            end
 
             dbgprint("found the literal:", literalfound)
-            --printtab(literalfound, 2)
+            dbgprint("expr:")
+            dbgprinttab(expr, 2)
 
-            if literalfound then -- if not var.AssignedTo and var.LiteralVal then
+            if literalfound then --not finding a literal also returns, and if we dont have it in replacetypes. expection that its a global as it might be a built-in
                 if literalfound.Type == "VariableExpr" then
-                    return solvevarexpr(literalfound)
+                    return resolveliteral(literalfound, noreplace)
                 else
                     dbgprint("the stack:")
                     dbgprinttab(var.Info.LiteralStack)
-                    if replaceconstants and count(var.Info.LiteralStack) <= 1 then --solving point!!
+                    if replaceconstants and safetoreplace(var.Info.LiteralStack) and not noreplace then --solving point!!
                         replace(expr, literalfound)
                     end
                     return literalfound
                 end
+            elseif expr.Variable and expr.Variable.Info.Type == "Global" then
+                dbgprint("expection as its global")
+                return expr --might just be a built in function
             end
         end
     end
@@ -3692,11 +3709,11 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
 
         do --Unknown variables solving
             if lhs.Type == "VariableExpr" then
-                lhs = solvevarexpr(lhs)
+                lhs = resolveliteral(lhs)
             end
 
             if rhs.Type == "VariableExpr" then
-                rhs = solvevarexpr(rhs)
+                rhs = resolveliteral(rhs)
             end
         end
         do --Voids
@@ -3916,9 +3933,11 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
                 end
             end
         elseif expr.Type == "UnopExpr" then
-            --solveExpr(expr.Rhs)
+            --solveExpr(expr.Rhs) --causes infinite loop on `myvar = -myvar` (alteast from my experience), so i moved it down
 
             if expr.Rhs ~= nil and canSolve[expr.Rhs.Type] == true then
+                solveExpr(expr.Rhs) --ofcourse solve it
+
                 local tokenOp = expr.Token_Op
 
                 if tokenOp ~= nil and tokenOp.Source ~= nil then
@@ -3999,11 +4018,27 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
                 elseif entry.EntryType == "Value" then
                     solveExpr(entry.Value)
                 else
-                    assert(false, "unreachable")
+                    error("unreachable")
                 end
             end
         elseif expr.Type == "CallExpr" or expr.Type == "MethodExpr" then
             warn('call expor:', expr)
+            local base = expr.Base
+            if base.Type == "VariableExpr" then --setmetatable anti solve
+                dbgprint("attemping to anti mt")
+                local basesolved = resolveliteral(base, true) or base
+                local var = basesolved.Variable
+                if var and var.Info.Type == "Global" then
+                    if var.Info.Name == "setmetatable" then --void if metatable
+                        local creatingmt = expr.FunctionArguments.ArgList[1]
+                        if creatingmt.Type == "VariableExpr" and creatingmt.Variable then
+                            dbgprint("saved the mt!")
+                            dbgprinttab(creatingmt)
+                            creatingmt.Variable.Info.LiteralStack[base.Variable.Location] = {expr, var.Scope}
+                        end
+                    end
+                end
+            end
             if expr.FunctionArguments then
                 if expr.FunctionArguments.ArgList then
                     for i, ch in ipairs(expr.FunctionArguments.ArgList) do
@@ -4020,7 +4055,54 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
             solveStat(expr.Body)
         elseif expr.Type == "ParenExpr" then
             dbgprint("paren expr!")
-            --solveStat(expr.Body)
+            solveExpr(expr.Expression)
+        elseif expr.Type == "IndexExpr" or expr.Type == "FieldExpr" then
+            local indexorfield = expr.Index or expr.Field
+            dbgprint("index / field expr!",  solveindexes, indexorfield.Type)
+            solveExpr(expr.Base)
+            solveExpr(indexorfield)
+            if (canSolve[indexorfield.Type] or indexorfield.Type == "Ident") and solveindexes then
+                dbgprint("attempt 1 solve")
+                local literaltable = resolveliteral(expr.Base, true)
+                dbgprinttab(indexorfield)
+                if literaltable and literaltable.Type == "TableLiteral" then
+                    local entrylist = literaltable.EntryList
+                    dbgprint("heres the expr index thingy")
+                    dbgprinttab(indexorfield)
+                    local indexsource do
+                        if indexorfield.Type == "NumberLiteral" then
+                            indexsource = tonumber(indexorfield.Token.Source)
+                        elseif indexorfield.Type == "StringLiteral" then
+                            indexsource = indexorfield.Token.Source:sub(2, -2) --only have the actual string
+                        elseif indexorfield.Type == "Ident" then
+                            indexsource = indexorfield.Source -- for field expr
+                        end
+                    end
+                    dbgprint("index source:", indexsource)
+                    dbgprint("indexing list:")
+                    dbgprinttab(entrylist)
+
+                    local entryValue
+                    for index, entry in ipairs(entrylist) do
+                        if entry.EntryType == "Value" and index == indexsource then
+                            entryValue = entry.Value
+                            break
+                        elseif entry.EntryType == "Field" and entry.Field then
+                            if entry.Field.Type == "Ident" and entry.Field.Source == indexsource then
+                                entryValue = entry.Value
+                            end
+                        end
+                    end
+                    if entryValue then
+                        local entryclone = clonedeep(entryValue) --BE CAREFUL, luckily this never references "upward", so no loops.
+                        dbgprint("successfully replaced index!")
+                        local beforeleadingwhite = expr:GetFirstToken().LeadingWhite
+                        replace(expr, entryclone)
+                        entryclone:GetFirstToken().LeadingWhite = beforeleadingwhite --make sure to transfer leadingwhite
+                        dbgprinttab(expr)
+                    end
+                end
+            end
         end
     end
 
@@ -4281,7 +4363,6 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
                 end
             end
         elseif stat.Type == "CallExprStat" then
-            warn("call expr", stat.Expression.Base.Token and stat.Expression.Base.Token.Source or "UNKNOWN", stat)
             solveExpr(stat.Expression)
         elseif stat.Type == "CompoundStat" then
             solveExpr(stat.Lhs)
@@ -4312,24 +4393,32 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants)
 end
 
 
-local function minify(src)
+--minify(sourcecode: string, useminify2: boolean)
+local function minify(src, useminify2)
     local ast = CreateLuaParser(src)
     local global_scope, root_scope = AddVariableInfo(ast)
-    MinifyVariables(global_scope, root_scope)
+    if useminify2 then
+        MinifyVariables_2(global_scope, root_scope)
+    else
+        MinifyVariables(global_scope, root_scope)
+    end
     local result = StripAst(ast)
     return StringAst(result)
 end
 
-local function beautify(src, ...)
-    dbgprint("working")
+--beautify(sourcecode: string, beautifyvariables: boolean?, solveconstants: boolean?, solveifstats: boolean?, replaceconstants: boolean?)
+local function beautify(src, beautifyvariables, solvemath, ...)
     local ast = CreateLuaParser(src)
-    dbgprint("my ast is ", ast)
-    local global_scope, root_scope = AddVariableInfo(ast)
-    dbgprint("scopes:", global_scope, root_scope)
-    --BeautifyVariables(global_scope, root_scope)
-    dbgprint("my ast2 is ", ast)
-    local result = FormatAst(SolveMath(ast, ...)) --solveconstants: boolean, solveifstats: boolean, replaceconstants: boolean
-    dbgprint("my result is ", result)
+    if beautifyvariables or solvemath then --Variable info required for solvemath and beautifyvariables
+        local global_scope, root_scope = AddVariableInfo(ast)
+        if beautifyvariables then
+            BeautifyVariables(global_scope, root_scope)
+        end
+        if solvemath then
+            SolveMath(ast, ...)
+        end
+    end
+    local result = FormatAst(ast) --solveconstants: boolean?, solveifstats: boolean?, replaceconstants: boolean?
     return StringAst(result)
 end
 
