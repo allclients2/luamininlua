@@ -1,4 +1,3 @@
--- This LUA file was created with LuamininLua, a Smart Lua Formatter in Lua.
 
 -- If statement
 local x = 10

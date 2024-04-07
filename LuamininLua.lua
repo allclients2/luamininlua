@@ -122,25 +122,31 @@ local EscapeForCharacter = {['\r'] = '\\r', ['\n'] = '\\n', ['\t'] = '\\t', ['"'
 
 local CharacterForEscape = {['r'] = '\r', ['n'] = '\n', ['t'] = '\t', ['"'] = '"', ["'"] = "'", ['\\'] = '\\'}
 
-local AllIdentStartChars = lookupify{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 
+local AllIdentStartChars = lookupify{
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 
     'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 
     's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 
     'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 
-    'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '_'}
+    'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '_'
+}
 
-local AllIdentChars = lookupify{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 
+local AllIdentChars = lookupify{
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 
     'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 
     's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 
     'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 
     'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '_',
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
+}
 
 local Digits = lookupify{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 
-local HexDigits = lookupify{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
-    'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E', 'e', 'F', 'f'}
+local HexDigits = lookupify{
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
+    'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E', 'e', 'F', 'f'
+}
 
 local Symbols = lookupify{'+', '-', '*', '/', '^', '%', ',', '{', '}', '[', ']', '(', ')', ';', '#', '.', ':'}
 
@@ -2335,7 +2341,8 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                             elseif getfunctionscope(literalscope) ~= getfunctionscope(var.Scope) then
                                 -- Continue as the function's control flow is unpredictable
                             elseif getscopeloop(literalscope) ~= getscopeloop(var.Scope) then --solving point!
-                                -- Continue as the function's control flow is unpredictable                   
+                                -- Continue as the function's control flow is unpredictable
+                                return                   
                             elseif not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
                                 -- Lower scopes shouldn't effect us
                             else
