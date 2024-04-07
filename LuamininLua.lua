@@ -68,13 +68,18 @@ local function clone(a)
     return b
 end
 
-local function clonedeep(a)
-    local b = {}
+local function clonedeep(a, seen)
+    local seen = seen or {}
+    local b, t = {}, {}
     for i,v in pairs(a) do
-        if type(v) == "table" then
-            v = clonedeep(v)
+        seen[v] = true
+        if type(v) == "table" and not seen[v] then
+            t[i] = v
         end
         b[i] = v
+    end
+    for i,v in pairs(t) do
+        b[i] = clonedeep(v, seen)
     end
     return b
 end
@@ -97,7 +102,7 @@ local function count(a)
 end
 
 local warn = warn or function(x)
-    dbgprint("! "..tostring(x).." !")
+    --dbgprint("! "..tostring(x).." !")
 end
 
 local function lookupify(tb)
@@ -274,7 +279,7 @@ function CreateLuaTokenStream(text)
             q = q + 1
         end
         for _, token in pairs(tokenBuffer) do
-            dbgprint(token.Type.."<"..token.Source..">")
+            --dbgprint(token.Type.."<"..token.Source..">")
         end
         olderr("file<"..line..":"..char..">: "..str)
     end
@@ -561,7 +566,7 @@ function CreateLuaParser(text)
 
         local function listdebugtokens()
             for i = -3, 3 do
-                dbgprint((i == 0 and "HERE --> " or "").."Tokens["..i.."] = `"..peek(i).Source.."`: ",peek(i))
+                --dbgprint((i == 0 and "HERE --> " or "").."Tokens["..i.."] = `"..peek(i).Source.."`: ",peek(i))
             end
         end
 
@@ -654,7 +659,7 @@ function CreateLuaParser(text)
                 end;
             }
         else
-            dbgprint(debugMark())
+            --dbgprint(debugMark())
             error(getTokenStartPosition(tk)..": Unexpected symbol")
         end
     end
@@ -724,7 +729,7 @@ function CreateLuaParser(text)
 
     -- List of identifiers
     local function varlist()
-        dbgprint('varlist')
+        --dbgprint('varlist')
         local varList = {}
         local commaList = {}
         if peek().Type == 'Ident' or peek().Source == '...' then --only one var
@@ -747,7 +752,7 @@ function CreateLuaParser(text)
             get()
             return body, after
         else
-            dbgprint(after.Type, after.Source)
+            --dbgprint(after.Type, after.Source)
             error(getTokenStartPosition(after)..": "..terminator.." expected.")
         end
     end
@@ -982,11 +987,11 @@ function CreateLuaParser(text)
                 Type = 'BooleanLiteral';
                 Token = get();
                 GetFirstToken = function(self)
-                    dbgprint(self.Token, "is the self token f")
+                    --dbgprint(self.Token, "is the self token f")
                     return self.Token
                 end;
                 GetLastToken = function(self)
-                    dbgprint(self.Token, "is the self token l")
+                    --dbgprint(self.Token, "is the self token l")
                     return self.Token
                 end;
             }
@@ -1044,7 +1049,7 @@ function CreateLuaParser(text)
                 Rhs = rhs;
                 Token_Op = opTk;
                 GetFirstToken = function(self)
-                    warn("CALLED IT !!!")
+                    --warn("CALLED IT !!!")
                     return self.Lhs:GetFirstToken()
                 end;
                 GetLastToken = function(self)
@@ -1707,7 +1712,7 @@ function AddVariableInfo(ast)
             Function.Scope = currentScope
         end
         if FuncVar then -- true 
-            dbgprinttab(FuncVar)
+            --dbgprinttab(FuncVar)
             if not FuncVar.Calls then
                 FuncVar.Calls = {}
             end
@@ -1761,8 +1766,8 @@ function AddVariableInfo(ast)
         assert(localInfo, "Misisng localInfo")
         assert(name, "Missing local var name")
         local startlocation = markLocation()
-        dbgprint("edt45g")
-        dbgprinttab(LiteralVal,1)
+        --dbgprint("edt45g")
+        --dbgprinttab(LiteralVal,1)
         local var = {
             Type = 'Local';
             Name = name;
@@ -1871,7 +1876,7 @@ function AddVariableInfo(ast)
         -- add this location to the list of references to this variable.
         local curLocation = markLocation()
         var.EndLocation = curLocation
-        dbgprinttab(var)
+        --dbgprinttab(var)
         table.insert(var.ReferenceLocationList, var.EndLocation)
         table.insert(currentScope.UsedVars, var)
         local var2 = {
@@ -1968,15 +1973,15 @@ function AddVariableInfo(ast)
             local ex = stat.Expression.Base
             local var = ex.Variable
             if var and var.Info and ex.Token and ex.Token.Source then
-                dbgprint("call expr thing!")
-                dbgprinttab(stat)
+                --dbgprint("call expr thing!")
+                --dbgprinttab(stat)
                 if not var.Info.Calls then
                     var.Info.Calls = {{stat, currentScope.Function.Scope.UsedVars}}
                 else
                     table.insert(var.Info.Calls, {stat, currentScope.Function.Scope.UsedVars})
                 end
-                dbgprint("functions info:")
-                dbgprinttab(var.Info)
+                --dbgprint("functions info:")
+                --dbgprinttab(var.Info)
                 local scope = var.Info.FunctionScope
                 if scope and scope.UsedVars then
                     local curlocation = ex.Variable.Location
@@ -2014,7 +2019,7 @@ function AddVariableInfo(ast)
             -- the form `function foo()` with no additional dots/colons in the 
             -- name chain.
             local nameChain = stat.NameChain
-            dbgprint("the namechain is: ", nameChain, "oh and the stat is: ", stat)
+            --dbgprint("the namechain is: ", nameChain, "oh and the stat is: ", stat)
             local var = referenceVariable(nameChain[1].Source, function(name)
                 nameChain[1].Source = name
             end)
@@ -2022,8 +2027,8 @@ function AddVariableInfo(ast)
                 var.Info.AssignedTo = true
             end
             pushScope(stat, var.Info)
-            dbgprint("ok we have set it")
-            dbgprinttab(var)
+            --dbgprint("ok we have set it")
+            --dbgprinttab(var)
             for index, ident in pairs(stat.ArgList) do
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
@@ -2036,16 +2041,16 @@ function AddVariableInfo(ast)
         Post = function(stat)
             local varfunc = stat.Scope.Statement
             assert(varfunc, "no var func")
-            dbgprint("calls!")
+            --dbgprint("calls!")
             if varfunc.Info and varfunc.Info.FunctionScope then
                 local funcusedvars = varfunc.Info.FunctionScope.UsedVars --if you get an indexing error on this just apply some checks (pls work)
                 for _, data in ipairs(varfunc.Info.Calls) do
                     --data: {callstat, callusedvars}
                     local callusedvars = data[2]
-                    dbgprint("call used vars")
-                    dbgprinttab(callusedvars, 2)
+                    --dbgprint("call used vars")
+                    --dbgprinttab(callusedvars, 2)
                     for _, usedvar in pairs(funcusedvars) do
-                        dbgprint("adding:", usedvar)
+                        --dbgprint("adding:", usedvar)
                         table.insert(callusedvars, usedvar)
                     end
                 end
@@ -2065,7 +2070,7 @@ function AddVariableInfo(ast)
             end
             pushScope(nil,nil,stat,stat)
             for index, ident in pairs(stat.VarList) do
-                dbgprint("generic for stat: varlist in the for stat idents be like: ", ident)
+                --dbgprint("generic for stat: varlist in the for stat idents be like: ", ident)
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
                 end, {
@@ -2088,8 +2093,8 @@ function AddVariableInfo(ast)
                 VisitAst(ex, visitor)
             end
             pushScope(nil,nil,stat,stat)
-            dbgprint("numeric for stat")
-            dbgprinttab(stat)
+            --dbgprint("numeric for stat")
+            --dbgprinttab(stat)
             for index, ident in pairs(stat.VarList) do
                 addLocalVar(ident.Source, function(name)
                     ident.Source = name
@@ -2306,12 +2311,12 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
     --attempt to resolve the literal from a variable
     local function resolveliteral(expr, noreplace)
         local var = expr.Variable
-        
+
         if solveconstants and var and var.Info then --Make sure it really is a variable
-            
-            dbgprint("literal", var.Location, var.Info.LiteralStack)
-            --dbgprinttab(var.Info.LiteralStack) --Its laggy to print stack...
-            
+
+            --dbgprint("literal", var.Location, var.Info.LiteralStack)
+            ----dbgprinttab(var.Info.LiteralStack) --Its laggy to print stack...
+
             local location = var.Location
             local literalfound, literalscope
             while true do
@@ -2319,11 +2324,11 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                     local data = var.Info.LiteralStack[location]
                     if data then
                         local literaltest, literalscope = data[1], data[2]
-                        
+
                         if literaltest then
-                            dbgprint("testing literal...")
-                            dbgprinttab(literaltest, 1)
-                            
+                            --dbgprint("testing literal...")
+                            --dbgprinttab(literaltest, 1)
+
                             -- Perform some checks on the literal first..
                             if literaltest.Type == "CallExprStat" or literaltest.Type == "CallExpr" then
                                 return --Calls immedately void, as they are impredictable on what they do to the variable, atleast for right now
@@ -2339,41 +2344,41 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                             end  
                         end                        
                     elseif location <= 0 then --Never was assigned a literal
-                        dbgprint("not found")
+                        --dbgprint("not found")
                         break
                     end
                 end
                 location = location - 1 --Step down
             end
 
-            dbgprint("found the literal:")
-            dbgprinttab(literalfound, 2)
+            --dbgprint("found the literal:")
+            --dbgprinttab(literalfound, 2)
 
             if literalfound then --not finding a literal also returns, and if we dont have it in replacetypes. expection that its a global as it might be a built-in
                 if literalfound.Type == "VariableExpr" then
                     return resolveliteral(literalfound, noreplace)
                 else
-                    dbgprint("the stack:")
-                    dbgprinttab(var.Info.LiteralStack)
+                    --dbgprint("the stack:")
+                    --dbgprinttab(var.Info.LiteralStack)
                     if replaceconstants and safetoreplace(var.Info.LiteralStack) and not noreplace then --solving point!!
                         replace(expr, literalfound)
                     end
                     return literalfound
                 end
             elseif expr.Variable and expr.Variable.Info.Type == "Global" then
-                dbgprint("expection as its global")
+                --dbgprint("expection as its global")
                 return expr --might just be a built in function
             end
         end
-        
+
     end
 
     local function solvebinop(operator, left1, right1, leadingwhite)
-        dbgprint("MATHSOLVE: SOLVING BINOP: ",operator,left1,right1)
-        
+        --dbgprint("MATHSOLVE: SOLVING BINOP: ",operator,left1,right1)
+
         local lhs = left1
         local rhs = right1
-        
+
         --Ignore Parentheses
         if type(left1) == "table" and left1.Type == "ParenExpr" then
             lhs = left1.Expression
@@ -2392,7 +2397,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                 rhs = resolveliteral(rhs)
             end
         end
-        
+
         do --Voids, Checks on if we shouldn't continue
             if
                 lhs == nil or rhs == nil --Must exist
@@ -2418,7 +2423,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
         end
 
         --Actual solving below here
-        
+
         local l = (lhs.Token or (lhs.Expression and lhs.Expression.Token)) or nil
         local r = (rhs.Token or (rhs.Expression and rhs.Expression.Token)) or nil
 
@@ -2426,7 +2431,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
         local rSrc = r and r.Source or nil
 
         local left, right
-        
+
         if lhs.Type == "BooleanLiteral" then left = lSrc == "true" and true or false end
         if rhs.Type == "BooleanLiteral" then right = rSrc == "true" and true or false end
 
@@ -2570,8 +2575,8 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                 if tokenOp ~= nil and tokenOp.Source ~= nil and firsttoken then
                     local val = solvebinop(tokenOp.Source, expr.Lhs, expr.Rhs)
 
-                    dbgprint("returns of binop solve:")
-                    dbgprinttab(val)
+                    --dbgprint("returns of binop solve:")
+                    --dbgprinttab(val)
 
                     if val ~= nil then
                         if type(val) == "boolean" then
@@ -2657,7 +2662,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                         int[#int + 1] = part
                     end	
                     if #int == 2 then
-                        dbgprint("EXPONENT: ", token.Source)
+                        --dbgprint("EXPONENT: ", token.Source)
                         local l = tonumber(int[1])
                         local r = tonumber(int[2])
                         if l and r then
@@ -2702,7 +2707,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             end
         elseif expr.Type == "CallExpr" or expr.Type == "MethodExpr" then
             local base = expr.Base -- `Base(Arg1, Arg2)`
-            
+
             --Solve the exprs of the arguments
             if expr.FunctionArguments then
                 if expr.FunctionArguments.ArgList then
@@ -2714,7 +2719,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                     end
                 end
             end
-            
+
             --Setmetatable anti solve, we dont solve first arg as its gonna be a metatable
             if base.Type == "VariableExpr" then
                 local basesolved = resolveliteral(base, true) or base
@@ -2723,8 +2728,8 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                     if var.Info.Name == "setmetatable" then --Yeah now we push the "anti" onto the first argument, which is gonna be the `creatingmt`
                         local creatingmt = expr.FunctionArguments.ArgList[1]
                         if creatingmt.Type == "VariableExpr" and creatingmt.Variable then
-                            dbgprint("saved the mt!")
-                            dbgprinttab(creatingmt)
+                            --dbgprint("saved the mt!")
+                            --dbgprinttab(creatingmt)
                             creatingmt.Variable.Info.LiteralStack[base.Variable.Location] = {expr, var.Scope}
                         end
                     end
@@ -2736,15 +2741,15 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             solveExpr(expr.Expression)
         elseif expr.Type == "IndexExpr" or expr.Type == "FieldExpr" then
             local indexorfield = expr.Index or expr.Field -- `Base[Index]` OR `Base.Field`
-            
+
             solveExpr(expr.Base)
             solveExpr(indexorfield)
-            
-            if indexorfield and (canSolve[indexorfield.Type] or indexorfield.Type == "Ident") and solveindexes then
+
+            if solveindexes and indexorfield and (canSolve[indexorfield.Type] or indexorfield.Type == "Ident") then
                 local literaltable = resolveliteral(expr.Base, true) --Resolve the literal of the Base
                 if literaltable and literaltable.Type == "TableLiteral" then
                     local entrylist = literaltable.EntryList
-                    
+
                     local indexsource do --Get the source from the field or index type (More to be added soon)
                         if indexorfield.Type == "NumberLiteral" then
                             indexsource = tonumber(indexorfield.Token.Source)
@@ -2754,7 +2759,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                             indexsource = indexorfield.Source -- for field expr
                         end
                     end
-                    
+
 
                     local entryValue --Get the Entry's value
                     for index, entry in ipairs(entrylist) do
@@ -2768,14 +2773,14 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                             end
                         end
                     end
-                    
+
                     if entryValue then
                         local entryclone = clonedeep(entryValue) --BE CAREFUL, luckily this never references "upward", so no loops.
-                        dbgprint("successfully replaced index!")
+                        --dbgprint("successfully replaced index!")
                         local beforeleadingwhite = expr:GetFirstToken().LeadingWhite
                         replace(expr, entryclone)
                         entryclone:GetFirstToken().LeadingWhite = beforeleadingwhite --make sure to transfer leadingwhite
-                        dbgprinttab(expr)
+                        --dbgprinttab(expr)
                     end
                 end
             end
@@ -2790,7 +2795,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                 end
 
                 --Add some functions of the statements to interact with the statement list
-                
+
                 ch.NewStat = function(Stat, RelativePos)
                     table.insert(stat.StatementList, i + RelativePos, Stat)
                 end
@@ -2812,7 +2817,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
 
                     stat.StatementList[i] = nil
                 end	
-                
+
                 solveStat(ch)
             end
         elseif stat.Type == "BreakStat" then
@@ -2953,7 +2958,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                     else
                         local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
                         if lastclause and not lastclause.Condition then
-                            dbgprint("Attempting to replace token")
+                            --dbgprint("Attempting to replace token")
                             --Replace last elseclause as the main will always be performed.
                             replace(stat, { --__here
                                 Type = 'DoStat';
@@ -3020,7 +3025,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                     local clause = stat.ElseClauseList[i]
                     if clause then
                         local condition = clause.Condition
-                        if condition and condition.Token and stat.ElseClauseList[i].Token then
+                        if condition and condition.Token and stat.ElseClauseList[i].Token and condition.Type == "BooleanLiteral" then
                             if condition.Token.Source == "true" then
                                 repeat
                                     table.remove(stat.ElseClauseList, i + 1)
@@ -3031,7 +3036,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                             elseif condition.Token.Source == "false" then
                                 table.remove(stat.ElseClauseList, i)
                             else
-                                error("invalid source to boolean value")
+                                error("invalid source to boolean value `"..tostring(condition.Token.Source).."`")
                             end
                         end
                     end
@@ -3077,8 +3082,7 @@ function StringAst(ast)
         if not tk.LeadingWhite or not tk.Source then
             error("Bad token: "..FormatTable(tk))
         end
-        result = result .. (tk.LeadingWhite)
-        result = result .. (tk.Source)
+        result = result .. (tk.LeadingWhite) .. (tk.Source)
     end
 
     printExpr = function(expr)
@@ -3373,7 +3377,7 @@ local function FormatAst(ast)
     end
 
     local function leadingChar(tk)
-        dbgprint("TOKEN:" , tk)
+        --dbgprint("TOKEN:" , tk)
         if #tk.LeadingWhite > 0 then
             return tk.LeadingWhite:sub(1,1)
         else
@@ -3641,7 +3645,7 @@ local function FormatAst(ast)
             padToken(stat.Token_Do)
             formatBody(stat.Token_Do, stat.Body, stat.Token_End)
         elseif stat.Type == 'DoStat' then
-            warn("DOSTAT: ", stat)
+            --warn("DOSTAT: ", stat)
             formatBody(stat.Token_Do, stat.Body, stat.Token_End)
         elseif stat.Type == 'IfStat' then
             --(stat.Token_If)
@@ -3695,7 +3699,7 @@ local function FormatAst(ast)
         end	
     end
     formatStat(ast)
-    dbgprint("RESULT AST: ", ast)
+    --dbgprint("RESULT AST: ", ast)
     return ast
 end
 
@@ -3720,7 +3724,7 @@ local function StripAst(ast)
         if token.Source ~= "(" then
             token.LeadingWhite = ''
         else
-            dbgprint("Spotted ambigous syntax token `(`, adding semicolon..")
+            --dbgprint("Spotted ambigous syntax token `(`, adding semicolon..")
             token.LeadingWhite = ';'
         end
     end
@@ -3798,7 +3802,7 @@ local function StripAst(ast)
             stripExpr(expr.Index)
             stript(expr.Token_CloseBracket)
         elseif expr.Type == 'MethodExpr' or expr.Type == 'CallExpr' then
-            dbgprint("leads:", leadsstatment)
+            --dbgprint("leads:", leadsstatment)
             stripExpr(expr.Base, leadsstatment)
             if expr.Type == 'MethodExpr' then
                 stript(expr.Token_Colon)
@@ -3879,23 +3883,23 @@ local function StripAst(ast)
                 --print("first token:", chStat:GetFirstToken(), "of ", chStat)
 
                 -- If there was a last statement, join them appropriately
-				local lastChStat = stat.StatementList[i-1]
-				if lastChStat then
-					-- See if we can remove a semi-colon, the only case where we can't is if
-					-- this and the last statement have a `);(` pair, where removing the semi-colon
-					-- would introduce ambiguous syntax.
-					if stat.SemicolonList[i-1] and 
-						(lastChStat:GetLastToken().Source ~= ')' or chStat:GetFirstToken().Source ~= ')')
-					then
-						stat.SemicolonList[i-1] = nil
-					end
+                local lastChStat = stat.StatementList[i-1]
+                if lastChStat then
+                    -- See if we can remove a semi-colon, the only case where we can't is if
+                    -- this and the last statement have a `);(` pair, where removing the semi-colon
+                    -- would introduce ambiguous syntax.
+                    if stat.SemicolonList[i-1] and 
+                        (lastChStat:GetLastToken().Source ~= ')' or chStat:GetFirstToken().Source ~= ')')
+                    then
+                        stat.SemicolonList[i-1] = nil
+                    end
 
-					-- If there isn't a semi-colon, we should safely join the two statements
-					-- (If there is one, then no whitespace leading chStat is always okay)
-					if not stat.SemicolonList[i-1] then
-						joint(lastChStat:GetLastToken(), chStat:GetFirstToken(), ";")
-					end
-				end
+                    -- If there isn't a semi-colon, we should safely join the two statements
+                    -- (If there is one, then no whitespace leading chStat is always okay)
+                    if not stat.SemicolonList[i-1] then
+                        joint(lastChStat:GetLastToken(), chStat:GetFirstToken(), ";")
+                    end
+                end
             end
 
             -- A semi-colon is never needed on the last stat in a statlist:
@@ -4105,7 +4109,7 @@ local function StripAst(ast)
 
     stripStat(ast)
 
-    dbgprint("finished ast", ast)
+    --dbgprint("finished ast", ast)
 
     return ast
 end
