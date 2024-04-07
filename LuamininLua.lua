@@ -1,3 +1,5 @@
+-- LuamininLua.lua
+
 --[[
 
 MIT License
@@ -25,7 +27,7 @@ SOFTWARE.
 
 ]]
 
---v2
+--#region Debug IO
 
 local debugmode = false
 
@@ -53,6 +55,10 @@ local dbgprinttab = debugmode and function(a, b)
         dbgprint(dump(a, b or 3))
     end
 end or function (...) end
+
+--#endregion
+
+--#region Helper functions
 
 local function clone(a)
     local b = {}
@@ -90,11 +96,9 @@ local function count(a)
     return x
 end
 
-
 local warn = warn or function(x)
     dbgprint("! "..tostring(x).." !")
 end
-
 
 local function lookupify(tb)
     for _, v in pairs(tb) do
@@ -103,63 +107,9 @@ local function lookupify(tb)
     return tb
 end
 
-function CountTable(tb)
-    local c = 0
-    for _ in pairs(tb) do c = c + 1 end
-    return c
-end
+--#endregion
 
-function FormatTableInt(tb, atIndent, ignoreFunc)
-    if tb.Print then
-        return tb.Print()
-    end
-    atIndent = atIndent or 0
-    local useNewlines = (CountTable(tb) > 1)
-    local baseIndent = string.rep('    ', atIndent+1)
-    local out = "{"..(useNewlines and '\n' or '')
-    for k, v in pairs(tb) do
-        if type(v) ~= 'function' and not ignoreFunc(k) then
-            out = out..(useNewlines and baseIndent or '')
-            if type(k) == 'number' then
-                --nothing to do
-            elseif type(k) == 'string' and k:match("^[A-Za-z_][A-Za-z0-9_]*$") then 
-                out = out..k.." = "
-            elseif type(k) == 'string' then
-                out = out.."[\""..k.."\"] = "
-            else
-                out = out.."["..tostring(k).."] = "
-            end
-            if type(v) == 'string' then
-                out = out.."\""..v.."\""
-            elseif type(v) == 'number' then
-                out = out..v
-            elseif type(v) == 'table' then
-                out = out..FormatTableInt(v, atIndent+(useNewlines and 1 or 0), ignoreFunc)
-            else
-                out = out..tostring(v)
-            end
-            if next(tb, k) then
-                out = out..","
-            end
-            if useNewlines then
-                out = out..'\n'
-            end
-        end
-    end
-    out = out..(useNewlines and string.rep('    ', atIndent) or '').."}"
-    return out
-end
-
-function FormatTable(tb, ignoreFunc)
-    ignoreFunc = ignoreFunc or function() 
-        return false 
-    end
-    return FormatTableInt(tb, 0, ignoreFunc)
-end
-
-FormatTable = function (a)
-    return dump(a)
-end
+--#region Enums
 
 local WhiteChars = lookupify{' ', '\n', '\t', '\r'}
 
@@ -209,10 +159,6 @@ local BinopSet = lookupify{
     'and', 'or'
 }
 
-local GlobalRenameIgnore = lookupify{
-
-}
-
 local BinaryPriority = {
     ['+'] = {6, 6};
     ['-'] = {6, 6};
@@ -230,9 +176,59 @@ local BinaryPriority = {
     ['and'] = {2, 2};
     ['or'] = {1, 1};
 };
+
 local UnaryPriority = 8
 
--- Eof, Ident, Keyword, Number, String, Symbol
+--#endregion
+
+--#region Lua Parser
+function FormatTableInt(tb, atIndent, ignoreFunc)
+    if tb.Print then
+        return tb.Print()
+    end
+    atIndent = atIndent or 0
+    local useNewlines = (count(tb) > 1)
+    local baseIndent = string.rep('    ', atIndent+1)
+    local out = "{"..(useNewlines and '\n' or '')
+    for k, v in pairs(tb) do
+        if type(v) ~= 'function' and not ignoreFunc(k) then
+            out = out..(useNewlines and baseIndent or '')
+            if type(k) == 'number' then
+                --nothing to do
+            elseif type(k) == 'string' and k:match("^[A-Za-z_][A-Za-z0-9_]*$") then 
+                out = out..k.." = "
+            elseif type(k) == 'string' then
+                out = out.."[\""..k.."\"] = "
+            else
+                out = out.."["..tostring(k).."] = "
+            end
+            if type(v) == 'string' then
+                out = out.."\""..v.."\""
+            elseif type(v) == 'number' then
+                out = out..v
+            elseif type(v) == 'table' then
+                out = out..FormatTableInt(v, atIndent+(useNewlines and 1 or 0), ignoreFunc)
+            else
+                out = out..tostring(v)
+            end
+            if next(tb, k) then
+                out = out..","
+            end
+            if useNewlines then
+                out = out..'\n'
+            end
+        end
+    end
+    out = out..(useNewlines and string.rep('    ', atIndent) or '').."}"
+    return out
+end
+
+function FormatTable(tb, ignoreFunc)
+    ignoreFunc = ignoreFunc or function() 
+        return false 
+    end
+    return FormatTableInt(tb, 0, ignoreFunc)
+end
 
 function CreateLuaTokenStream(text)
     -- Tracking for the current position in the buffer, and
@@ -1368,7 +1364,6 @@ function CreateLuaParser(text)
             ExprList = exprList;
             Token_Return = returnKw;
             Token_CommaList = commaList;
-            Token_CommaList = commaList;
             GetFirstToken = function(self)
                 return self.Token_Return
             end;
@@ -1464,6 +1459,9 @@ function CreateLuaParser(text)
 
     return block()
 end
+--#endregion
+
+--#region AST Modification
 
 function VisitAst(ast, visitors)
     local ExprType = lookupify{
@@ -1650,10 +1648,7 @@ function VisitAst(ast, visitors)
     end
 end
 
---type inferedtype = "number" | "boolean" | "function" | "string" | "thread" | "nil" | 
-
---TODO: add constant idenifitcation
-
+-- Adds Info for every variable, via VisitAst
 function AddVariableInfo(ast)
     -- Numbering generator for variable lifetimes
     local locationGenerator = 0
@@ -1668,13 +1663,13 @@ function AddVariableInfo(ast)
         ChildScopeList = {};
         Depth = 0;
         VariableList = {};
-        GetVar = (function() end);
+        GetVar = (function(x) end);
     }
 
     local currentScope = rootscope
 
     -- Scope management
-    local function pushScope(Function, FuncVar, Stat)
+    local function pushScope(Function, FuncVar, Stat, Loop)
         local previousscope = currentScope
         currentScope = {
             ParentScope = currentScope;
@@ -1705,10 +1700,12 @@ function AddVariableInfo(ast)
 		 effects this variable, so we are no longer certian of its value and should not simplify
 		]]
         currentScope.Function = Function or (previousscope and previousscope.Function);
-        if Function then
+        currentScope.Loop = Loop;
+        if Stat then
+            Stat.Scope = currentScope
+        elseif Function then
             Function.Scope = currentScope
         end
-
         if FuncVar then -- true 
             dbgprinttab(FuncVar)
             if not FuncVar.Calls then
@@ -1993,6 +1990,22 @@ function AddVariableInfo(ast)
             end
         end
     }
+    visitor.WhileStat = {
+        Pre = function (stat)
+            pushScope(nil, nil, stat, stat)
+        end,
+        Post = function (stat)
+            popScope()
+        end,
+    }
+    visitor.RepeatStat = {
+        Pre = function (stat)
+            pushScope(nil, nil, stat, stat)
+        end,
+        Post = function (stat)
+            popScope()
+        end,
+    }
     visitor.FunctionStat = {
         Pre = function(stat) 			
             -- Function stat adds a new scope containing the function arguments
@@ -2050,7 +2063,7 @@ function AddVariableInfo(ast)
             for _, ex in pairs(stat.GeneratorList) do
                 VisitAst(ex, visitor)
             end
-            pushScope(nil,nil,stat)
+            pushScope(nil,nil,stat,stat)
             for index, ident in pairs(stat.VarList) do
                 dbgprint("generic for stat: varlist in the for stat idents be like: ", ident)
                 addLocalVar(ident.Source, function(name)
@@ -2074,7 +2087,7 @@ function AddVariableInfo(ast)
             for _, ex in pairs(stat.RangeList) do
                 VisitAst(ex, visitor)
             end
-            pushScope(nil,nil,stat)
+            pushScope(nil,nil,stat,stat)
             dbgprint("numeric for stat")
             dbgprinttab(stat)
             for index, ident in pairs(stat.VarList) do
@@ -2101,7 +2114,7 @@ function AddVariableInfo(ast)
                     ex.Variable.Info.AssignedTo = true
                     local rhsval = stat.Rhs[i]
                     --if rhsval.Type ~= "BinopExpr" then
-                        ex.Variable.Info.LiteralStack[curlocation] = {rhsval, currentScope}
+                    ex.Variable.Info.LiteralStack[curlocation] = {rhsval, currentScope}
                     --end
                     --ex.Variable.LiteralVal = stat.Rhs[i]
                 end
@@ -2137,6 +2150,1202 @@ function AddVariableInfo(ast)
 
     return globalVars, popScope()
 end
+
+--Solve the Solveable math in an ast, Also some other special functions like solveconstants, solveifstats, replaceconstants, solveindexes, etc...
+local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, solveindexes)
+    local ast = ast
+    local canSolve = {
+        NumberLiteral = true,
+        BooleanLiteral = true,
+        StringLiteral = true,
+        HashLiteral = true,
+        NilLiteral = true,
+        TableLiteral = true,
+        ParenExpr = true,
+        BinopExpr = true
+    }
+
+    local replaceTypes = {
+        NumberLiteral = true,
+        BooleanLiteral = true,
+        StringLiteral = true,
+        HashLiteral = true,
+        NilLiteral = true,
+    }
+
+    local function isfinite(num)
+        return num == num and num ~= math.huge and num ~= -math.huge
+    end
+
+    local function solvebuiltincall()
+
+    end
+
+
+    local function createtype(type, val, type2, noleadingwhite)
+        type2 = type2 or "Number"
+        return {
+            Type = type,
+            Token = {
+                Type = type2,
+                LeadingWhite = (noleadingwhite and "" or " "),
+                Source = val
+            },
+            GetFirstToken = function(self)
+                return self.Token --(noleadingwhite and tostring(val):sub(1,1) or " ")
+            end,
+            GetLastToken = function(self)
+                return self.Token
+            end
+        }
+    end
+
+
+    local function createbinop(operator, lhs, rhs, leadingwhite)
+        return {
+            Type = "BinopExpr",
+            Token_Op = { Type = "Symbol", LeadingWhite = leadingwhite, Source = operator },
+            Lhs = lhs,
+            Rhs = rhs,
+            GetFirstToken = function()
+                return lhs.GetFirstToken()
+            end,
+            GetLastToken = function()
+                return rhs.GetLastToken()
+            end
+        }
+    end
+
+    local function createunop(operator, rhs, leadingwhite)
+        return {
+            Type = "UnopExpr",
+            Token_Op = { Type = "Symbol", LeadingWhite = leadingwhite, Source = operator },
+            Rhs = rhs,
+            GetFirstToken = function()
+                return rhs.Token_Op
+            end,
+            GetLastToken = function()
+                return rhs.GetLastToken()
+            end
+        }
+    end
+
+    --replace without making a new variable, as tables are all "references", replace all of b into a
+    local function replace(a, b)
+        if b == nil then return end
+        for i, v in pairs(b) do
+            a[i] = v
+        end
+    end
+
+    local function removething(a)
+        if a == nil or type(a) ~= "string" then return end
+
+        local start = a:sub(1, 1)
+        local ret
+        if start == '"' or start == "'" then
+            ret = a:sub(2, #a - 1)
+        elseif start == '[' then
+            local count = 0
+            local p = 2
+            while a:sub(p, p) == '=' do
+                count = count + 1
+                p = p + 1
+            end
+
+            ret = a:sub(2 + count, #a - 2 - count)
+        end
+
+        if ret == nil then return '' end
+
+        local newret = ''
+        for i = 1, #ret do
+            local c = ret:sub(i, i)
+
+            if c == "'" or c == '"' then
+                newret = newret .. '\\' .. c
+            else
+                newret = newret .. c
+            end
+        end
+        return newret
+    end
+
+    local function removeParen(a)
+        if type(a) == "table" and a.Type == "ParenExpr" then
+            a = a.Expression
+        end
+    end
+
+    --determines if a expression is safe to replace if the stack is no more than 1
+    local function safetoreplace(literalstack)  --solving point!!
+        for _, literal in pairs(literalstack) do
+            if type(literal) == "table" and not replaceTypes[literal.Type] then
+                return false
+            end
+        end
+        return true
+    end
+
+    local function getfunctionscope(scope)
+        if scope.Function then
+            return scope.Function
+        elseif scope.ParentScope then
+            return getfunctionscope(scope.ParentScope)
+        end
+    end
+
+    local function getscopeloop(scope)
+        if scope.Loop then
+            return scope.Loop
+        elseif scope.ParentScope then
+            return getscopeloop(scope.ParentScope)
+        end
+    end
+
+    --attempt to resolve the literal from a variable
+    local function resolveliteral(expr, noreplace)
+        local var = expr.Variable
+        
+        if solveconstants and var and var.Info then --Make sure it really is a variable
+            
+            dbgprint("literal", var.Location, var.Info.LiteralStack)
+            --dbgprinttab(var.Info.LiteralStack) --Its laggy to print stack...
+            
+            local location = var.Location
+            local literalfound, literalscope
+            while true do
+                if (var.Location - 1) ~= location and var.Location ~= location then --dont want to look for ourselves, as an assignment
+                    local data = var.Info.LiteralStack[location]
+                    if data then
+                        local literaltest, literalscope = data[1], data[2]
+                        
+                        if literaltest then
+                            dbgprint("testing literal...")
+                            dbgprinttab(literaltest, 1)
+                            
+                            -- Perform some checks on the literal first..
+                            if literaltest.Type == "CallExprStat" or literaltest.Type == "CallExpr" then
+                                return --Calls immedately void, as they are impredictable on what they do to the variable, atleast for right now
+                            elseif getfunctionscope(literalscope) ~= getfunctionscope(var.Scope) then
+                                -- Continue as the function's control flow is unpredictable
+                            elseif getscopeloop(literalscope) ~= getscopeloop(var.Scope) then --solving point!
+                                -- Continue as the function's control flow is unpredictable                   
+                            elseif not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
+                                -- Lower scopes shouldn't effect us
+                            else
+                                literalfound = literaltest --This is a good literal
+                                break
+                            end  
+                        end                        
+                    elseif location <= 0 then --Never was assigned a literal
+                        dbgprint("not found")
+                        break
+                    end
+                end
+                location = location - 1 --Step down
+            end
+
+            dbgprint("found the literal:")
+            dbgprinttab(literalfound, 2)
+
+            if literalfound then --not finding a literal also returns, and if we dont have it in replacetypes. expection that its a global as it might be a built-in
+                if literalfound.Type == "VariableExpr" then
+                    return resolveliteral(literalfound, noreplace)
+                else
+                    dbgprint("the stack:")
+                    dbgprinttab(var.Info.LiteralStack)
+                    if replaceconstants and safetoreplace(var.Info.LiteralStack) and not noreplace then --solving point!!
+                        replace(expr, literalfound)
+                    end
+                    return literalfound
+                end
+            elseif expr.Variable and expr.Variable.Info.Type == "Global" then
+                dbgprint("expection as its global")
+                return expr --might just be a built in function
+            end
+        end
+        
+    end
+
+    local function solvebinop(operator, left1, right1, leadingwhite)
+        dbgprint("MATHSOLVE: SOLVING BINOP: ",operator,left1,right1)
+        
+        local lhs = left1
+        local rhs = right1
+        
+        --Ignore Parentheses
+        if type(left1) == "table" and left1.Type == "ParenExpr" then
+            lhs = left1.Expression
+        end
+        if type(right1) == "table" and right1.Type == "ParenExpr" then
+            rhs = right1.Expression
+        end
+
+
+        do --Unknown variables solving
+            if lhs.Type == "VariableExpr" then
+                lhs = resolveliteral(lhs)
+            end
+
+            if rhs.Type == "VariableExpr" then
+                rhs = resolveliteral(rhs)
+            end
+        end
+        
+        do --Voids, Checks on if we shouldn't continue
+            if
+                lhs == nil or rhs == nil --Must exist
+                or lhs.Type == nil or rhs.Type == nil
+            then
+                return
+            end
+
+            --Returns could vary
+            if lhs.Type == "CallExpr" or rhs.Type == "CallExpr" then
+                return
+            end
+
+            --Always solve lower binops first!
+            if lhs.Type == "BinopExpr" or rhs.Type == "BinopExpr" then
+                return
+            end
+
+            --We still have variables even after solving..
+            if lhs.Type == "VariableExpr" or rhs.Type == "VariableExpr" then
+                return
+            end
+        end
+
+        --Actual solving below here
+        
+        local l = (lhs.Token or (lhs.Expression and lhs.Expression.Token)) or nil
+        local r = (rhs.Token or (rhs.Expression and rhs.Expression.Token)) or nil
+
+        local lSrc = l and l.Source or nil
+        local rSrc = r and r.Source or nil
+
+        local left, right
+        
+        if lhs.Type == "BooleanLiteral" then left = lSrc == "true" and true or false end
+        if rhs.Type == "BooleanLiteral" then right = rSrc == "true" and true or false end
+
+        if lhs.Type == "NumberLiteral" then
+            left = tonumber(lSrc)
+            if left == nil then return end
+        end
+        if rhs.Type == "NumberLiteral" then
+            right = tonumber(rSrc)
+            if right == nil then return end
+        end
+
+        if lhs.Type == "StringLiteral" or lhs.Type == 'HashLiteral' then left = tostring(lSrc) end
+        if rhs.Type == "StringLiteral" or rhs.Type == 'HashLiteral' then right = tostring(rSrc) end
+
+        if left ~= nil and right ~= nil then
+            if operator == "==" then return left == right end
+            if operator == "~=" then return left ~= right end
+            if operator == "and" then return left and right end
+            if operator == "or" then return left or right end
+            if operator == ".." and lhs.Type == "StringLiteral" and rhs.Type == "StringLiteral" then
+                return '"' .. removething(lSrc) .. removething(rSrc) .. '"'
+            end
+
+            if lhs.Type == "StringLiteral" then left = tonumber(removething(left)) end
+            if rhs.Type == "StringLiteral" then right = tonumber(removething(right)) end
+
+            if left == nil or right == nil then return end
+
+            local val
+            if operator == "+" then val = left + right end
+            if operator == "-" then val = left - right end
+            if operator == "*" then val = left * right end
+            if operator == "/" then val = left / right end
+            if operator == "^" then val = left ^ right end
+            if operator == "%" then val = left % right end
+
+            if operator == ">" then val = left > right end
+            if operator == "<" then val = left < right end
+            if operator == ">=" then val = left >= right end
+            if operator == "<=" then val = left <= right end
+
+            if type(val) == "boolean" or (type(val) == "number" and isfinite(val) and val > -(10 ^ 52) and val < 10 ^ 52) then
+                return val
+            end
+        end
+    end
+
+    local function solveunop(operator, rhs, leadingwhite)
+        local b = rhs.Token or (rhs.Expression and rhs.Expression.Token) or rhs.EntryList or rhs
+
+        if b == nil then return end
+        if b.Source == nil and rhs.Type ~= "TableLiteral" then return end
+
+        if rhs.Type == "VariableExpr" or rhs.Type == "CallExpr" or rhs.Type == "BinopExpr" then return end
+
+        local rSrc = b.Source
+        local right
+
+        if rhs.Type == "TableLiteral" and b ~= nil then
+            local extra = {}
+            local amount = 0
+            local ignoreRest = false
+            local no = false
+            local lastIndex = 0
+
+            for i, v in ipairs(b) do
+                if ignoreRest then
+                    table.insert(extra, v)
+                else
+                    if v.EntryType == "Value" or v.EntryType == "Index" then
+                        if (v.Index == nil or v.Index.Type == "NumberLiteral") and v.Value then
+                            local index = (v.Index ~= nil and v.Index.Token ~= nil and v.Index.Token.Source ~= nil) and v.Index.Token.Source or lastIndex + 1
+
+                            if tostring(index) ~= tostring(lastIndex + 1) then
+                                ignoreRest = true
+                                no = true
+                                table.insert(extra, v)
+                                break
+                            end
+
+                            if v.Value.Type ~= "CallExpr" then
+                                amount = amount + 1
+                            else
+                                ignoreRest = true
+                                table.insert(extra, v)
+                            end
+                        else
+                            table.insert(extra, v)
+                        end
+                    end
+                end
+            end
+
+            if no then return end
+
+            if operator == "#" then
+                rhs.EntryList = extra
+
+                if #rhs.EntryList <= 0 then
+                    return createtype("NumberLiteral", amount or #rhs.EntryList, #leadingwhite <= 0)
+                elseif amount <= 0 then
+                    return createunop("#", rhs, leadingwhite)
+                end
+
+                local newex = createbinop("+", createtype("NumberLiteral", amount), createunop("#", rhs), leadingwhite)
+                return newex
+            end
+        end
+
+        if rhs.Type == "BooleanLiteral" then right = rSrc == "true" and true or false end
+        if rhs.Type == "NumberLiteral" then
+            right = tonumber(rSrc)
+            if right == nil then return end
+        end
+        if rhs.Type == "StringLiteral" then right = rSrc:sub(2, #rSrc - 1) end
+
+        if operator == "not" and rhs.Type ~= nil then
+            if rhs.Type == "NilLiteral" or (rhs.Type == "BooleanLiteral" and right == false) then return true end
+            return false
+        end
+
+        if right ~= nil then
+            if operator == "#" then return #right end
+            if operator == "-" then return -right end
+        end
+    end
+
+    local solveStat, solveExpr;
+
+    function solveExpr(expr)
+        --warn("MATHSOLVE: SOLVING EXPR: ", expr)
+        if expr.Type == "BinopExpr" then
+            solveExpr(expr.Lhs)
+            solveExpr(expr.Rhs)
+
+            if expr.Lhs ~= nil and expr.Rhs ~= nil then
+                local firsttoken = expr:GetFirstToken()
+                local tokenOp = expr.Token_Op
+
+                if tokenOp ~= nil and tokenOp.Source ~= nil and firsttoken then
+                    local val = solvebinop(tokenOp.Source, expr.Lhs, expr.Rhs)
+
+                    dbgprint("returns of binop solve:")
+                    dbgprinttab(val)
+
+                    if val ~= nil then
+                        if type(val) == "boolean" then
+                            local b = createtype("BooleanLiteral", tostring(val), "Keyword", #firsttoken.LeadingWhite <= 0)
+                            replace(expr, b)
+                            return
+                        elseif type(val) == "number" then
+                            if isfinite(val) then
+                                local num = createtype("NumberLiteral", tostring(val), "Number", #firsttoken.LeadingWhite <= 0)
+                                replace(expr, num)
+                                return
+                            end
+                        elseif type(val) == "string" then
+                            local str = createtype("StringLiteral", val, "String", #firsttoken.LeadingWhite <= 0)
+                            replace(expr, str)
+                            return
+                        elseif type(val) == "table" then
+                            replace(expr, val)
+                            return
+                        end
+                        return
+                    end
+                end
+
+                if expr.Lhs.Type == "ParenExpr" then
+                    local exprt = expr.Lhs
+                    local expression = exprt.Expression
+                    if expression.Type == "NumberLiteral" or expression.Type == "StringLiteral"
+                        or expression.Type == "NilLiteral" or expression.Type == "BooleanLiteral" or expression.Type == 'HashLiteral' then
+                    end
+                end
+                if expr.Rhs.Type == "ParenExpr" then
+                    local exprt = expr.Rhs
+                    local expression = exprt.Expression
+                    if expression.Type == "NumberLiteral" or expression.Type == "StringLiteral"
+                        or expression.Type == "NilLiteral" or expression.Type == "BooleanLiteral" or expression.Type == 'HashLiteral' then
+                    end
+                end
+            end
+        elseif expr.Type == "UnopExpr" then
+            --solveExpr(expr.Rhs) --causes infinite loop on `myvar = -myvar` (alteast from my experience), so i moved it down
+
+            if expr.Rhs ~= nil and canSolve[expr.Rhs.Type] == true then
+                solveExpr(expr.Rhs) --ofcourse solve it
+
+                local tokenOp = expr.Token_Op
+
+                if tokenOp ~= nil and tokenOp.Source ~= nil then
+                    local rhs = expr.Rhs.Expression or expr.Rhs
+                    local val = solveunop(tokenOp.Source, rhs, tokenOp.LeadingWhite)
+
+                    if val ~= nil then
+                        if type(val) == "boolean" then
+                            local b = createtype("BooleanLiteral", tostring(val), "Keyword")
+                            replace(expr, b)
+                            return
+                        elseif type(val) == "number" then
+                            if isfinite(val) then
+                                local num = createtype("NumberLiteral", tostring(val), "Number")
+                                replace(expr, num)
+                                return
+                            end
+                        elseif type(val) == "string" then
+                            local str = createtype("StringLiteral", val, "String")
+                            replace(expr, str)
+                            return
+                        elseif type(val) == "table" then
+                            replace(expr, val)
+                            return
+                        end
+                        return
+                    end
+                end
+            end
+        elseif (expr.Type == "NumberLiteral" or expr.Type == "StringLiteral"
+            or expr.Type == "NilLiteral" or expr.Type == "BooleanLiteral"
+            or expr.Type == "VargLiteral" or expr.Type == 'HashLiteral') then
+            local token = expr.Token
+            if token ~= nil then
+                if token.Type == "Number" then
+                    local int = {}
+                    for part in token.Source:gmatch('([^e]+)') do
+                        int[#int + 1] = part
+                    end	
+                    if #int == 2 then
+                        dbgprint("EXPONENT: ", token.Source)
+                        local l = tonumber(int[1])
+                        local r = tonumber(int[2])
+                        if l and r then
+                            if isfinite(l) and isfinite(r) and (l ^ r) < 999999999 and (not token.Source:find('+') and token.Source:find('.') and not token.Source:find('-')) then
+                                token.Source = tostring(l ^ r)
+                            end
+                        end
+                    end
+                end				
+
+                if token.Type == "String" then
+                    token.Source = token.Source:gsub("\\\\%d+", function(got)
+                        local num = tonumber(got:sub(2, #got - 1))
+
+                        if num and isfinite(num) and (
+                            (num >= 97 and num <= 122)
+                                or (num >= 65 and num <= 90)
+                                or (num >= 33 and num <= 47)
+                                or (num >= 58 and num <= 64)
+                                or (num >= 91 and num <= 96)
+                                or (num >= 123 and num <= 126)
+                            ) and num ~= 34 and num ~= 39 and num ~= 92 then
+                            return string.char(num)
+                        end
+
+                        return got
+                    end)
+                end
+            end
+        elseif expr.Type == "TableLiteral" then
+            for i, entry in ipairs(expr.EntryList) do
+                if entry.EntryType == "Field" then
+                    solveExpr(entry.Value)
+                elseif entry.EntryType == "Index" then
+                    solveExpr(entry.Index)
+                    solveExpr(entry.Value)
+                elseif entry.EntryType == "Value" then
+                    solveExpr(entry.Value)
+                else
+                    error("unreachable")
+                end
+            end
+        elseif expr.Type == "CallExpr" or expr.Type == "MethodExpr" then
+            local base = expr.Base -- `Base(Arg1, Arg2)`
+            
+            --Solve the exprs of the arguments
+            if expr.FunctionArguments then
+                if expr.FunctionArguments.ArgList then
+                    for i, ch in ipairs(expr.FunctionArguments.ArgList) do
+                        if ch == nil or ch.Type == nil then
+                            return
+                        end
+                        solveExpr(ch)
+                    end
+                end
+            end
+            
+            --Setmetatable anti solve, we dont solve first arg as its gonna be a metatable
+            if base.Type == "VariableExpr" then
+                local basesolved = resolveliteral(base, true) or base
+                local var = basesolved.Variable
+                if var and var.Info.Type == "Global" then
+                    if var.Info.Name == "setmetatable" then --Yeah now we push the "anti" onto the first argument, which is gonna be the `creatingmt`
+                        local creatingmt = expr.FunctionArguments.ArgList[1]
+                        if creatingmt.Type == "VariableExpr" and creatingmt.Variable then
+                            dbgprint("saved the mt!")
+                            dbgprinttab(creatingmt)
+                            creatingmt.Variable.Info.LiteralStack[base.Variable.Location] = {expr, var.Scope}
+                        end
+                    end
+                end
+            end
+        elseif expr.Type == "FunctionLiteral" then
+            solveStat(expr.Body)
+        elseif expr.Type == "ParenExpr" then
+            solveExpr(expr.Expression)
+        elseif expr.Type == "IndexExpr" or expr.Type == "FieldExpr" then
+            local indexorfield = expr.Index or expr.Field -- `Base[Index]` OR `Base.Field`
+            
+            solveExpr(expr.Base)
+            solveExpr(indexorfield)
+            
+            if indexorfield and (canSolve[indexorfield.Type] or indexorfield.Type == "Ident") and solveindexes then
+                local literaltable = resolveliteral(expr.Base, true) --Resolve the literal of the Base
+                if literaltable and literaltable.Type == "TableLiteral" then
+                    local entrylist = literaltable.EntryList
+                    
+                    local indexsource do --Get the source from the field or index type (More to be added soon)
+                        if indexorfield.Type == "NumberLiteral" then
+                            indexsource = tonumber(indexorfield.Token.Source)
+                        elseif indexorfield.Type == "StringLiteral" then
+                            indexsource = indexorfield.Token.Source:sub(2, -2) --only have the actual string
+                        elseif indexorfield.Type == "Ident" then
+                            indexsource = indexorfield.Source -- for field expr
+                        end
+                    end
+                    
+
+                    local entryValue --Get the Entry's value
+                    for index, entry in ipairs(entrylist) do
+                        if entry.EntryType == "Value" and index == indexsource then
+                            entryValue = entry.Value
+                            break
+                        elseif entry.EntryType == "Field" and entry.Field then
+                            if entry.Field.Type == "Ident" and entry.Field.Source == indexsource then
+                                entryValue = entry.Value
+                                break
+                            end
+                        end
+                    end
+                    
+                    if entryValue then
+                        local entryclone = clonedeep(entryValue) --BE CAREFUL, luckily this never references "upward", so no loops.
+                        dbgprint("successfully replaced index!")
+                        local beforeleadingwhite = expr:GetFirstToken().LeadingWhite
+                        replace(expr, entryclone)
+                        entryclone:GetFirstToken().LeadingWhite = beforeleadingwhite --make sure to transfer leadingwhite
+                        dbgprinttab(expr)
+                    end
+                end
+            end
+        end
+    end
+
+    function solveStat(stat)
+        if stat.Type == "StatList" then
+            for i, ch in ipairs(stat.StatementList) do
+                if ch == nil or ch.Type == nil then
+                    return
+                end
+
+                --Add some functions of the statements to interact with the statement list
+                
+                ch.NewStat = function(Stat, RelativePos)
+                    table.insert(stat.StatementList, i + RelativePos, Stat)
+                end
+
+                ch.Remove = function()
+                    local firstoken = stat.StatementList[i]:GetFirstToken()
+                    local nextstat = stat.StatementList[i + 1]
+                    if firstoken and nextstat then
+                        local leadwhite = firstoken.LeadingWhite
+                        local nexttoken = nextstat:GetFirstToken()
+                        if nexttoken and leadwhite then --Pass on leading white
+                            if leadwhite:sub(#leadwhite) == "\n" then --remove new line from the removed statement
+                                leadwhite = leadwhite:sub(1, #leadwhite - 1)
+                            end
+                            nexttoken.LeadingWhite = leadwhite .. nexttoken.LeadingWhite
+                        end
+                    end
+                    --print(leadwhite)
+
+                    stat.StatementList[i] = nil
+                end	
+                
+                solveStat(ch)
+            end
+        elseif stat.Type == "BreakStat" then
+            --nothing
+        elseif stat.Type == "ContinueStat" then
+            --what
+        elseif stat.Type == "ReturnStat" then
+            for i, expr in ipairs(stat.ExprList) do
+                solveExpr(expr)
+            end
+        elseif stat.Type == "LocalVarStat" then
+            if stat.Token_Equals ~= nil then
+                for i, expr in ipairs(stat.ExprList) do
+                    solveExpr(expr)
+                end
+            end
+        elseif stat.Type == "LocalFunctionStat" then
+            solveStat(stat.FunctionStat.Body)
+
+            if #stat.FunctionStat.NameChain == 1 then
+                if stat.FunctionStat.NameChain[1].UseCount == 0 then
+                    return stat.Remove()
+                end
+            end
+
+        elseif stat.Type == "FunctionStat" then
+            solveStat(stat.Body)
+        elseif stat.Type == "RepeatStat" then
+            solveStat(stat.Body)
+            solveExpr(stat.Condition)
+
+            if stat.Body.Type == "StatList" and #stat.Body.StatementList == 0 then
+                return stat.Remove()
+            end
+        elseif stat.Type == "GenericForStat" then
+            for i, expr in ipairs(stat.GeneratorList) do
+                solveExpr(expr)
+            end
+            solveStat(stat.Body)
+        elseif stat.Type == "NumericForStat" then
+            for i, expr in ipairs(stat.RangeList) do
+                solveExpr(expr)
+            end
+            solveStat(stat.Body)
+
+            local a = stat.RangeList[1]
+            local b = stat.RangeList[2]
+            local c = stat.RangeList[3]
+            if a == nil or b == nil then
+                return stat.Remove()
+            end
+
+            removeParen(a)
+            removeParen(b)
+            removeParen(c)
+
+            if a.Type ~= "NumberLiteral" or b.Type ~= "NumberLiteral" or c ~= nil and (c.Type ~= "NumberLiteral" or c == nil) then
+                return
+            end
+
+            local start = tonumber(a.Token.Source)
+            local endd = tonumber(b.Token.Source)
+            local step = (c ~= nil and tonumber(c.Token.Source)) or 1
+
+            local t1 = ((step > 0 and start <= endd) or (step < 0 and start >= endd))
+            local t2 = ((endd - start) + step) / step
+
+            local willRun = t1 and t2 >= 0
+
+            if not willRun then
+                return stat.Remove()
+            end
+
+            if stat.Body.Type == "StatList" and #stat.Body.StatementList == 0 then
+                return stat.Remove()
+            end
+        elseif stat.Type == "WhileStat" then
+            solveExpr(stat.Condition)
+            solveStat(stat.Body)
+
+            local condition = stat.Condition
+            if condition.Type == "ParenExpr" then
+                condition = condition.Expression
+            end
+            if condition.Type == "BooleanLiteral" then
+                if condition == nil or condition.Token == nil or condition.Token.Source ~= "false" then
+                end
+            elseif condition.Type == "NilLiteral" then
+                return stat.Remove()
+            end
+        elseif stat.Type == "DoStat" then
+            solveStat(stat.Body)
+
+            if stat.Body == nil or stat.Body.Type == "StatList" and #stat.Body.StatementList == 0 then
+                return stat.Remove()
+            elseif #stat.Body.StatementList == 1 then
+                local s = stat.Body.StatementList[1]
+                if s.Type ~= 'ContinueStat'
+                    and s.Type ~= 'BreakStat'
+                    and s.Type ~= 'ReturnStat' then
+                    replace(stat, s)
+                end
+            end
+        elseif stat.Type == "IfStat" then
+            --print("CONDIT IFSTAT BEFORE: ", stat.Condition)
+
+            solveExpr(stat.Condition)
+            --print("CONDIT IFSTAT BEFORE2: ", stat.Condition)
+            solveStat(stat.Body)
+            for i, clause in ipairs(stat.ElseClauseList) do
+                if clause.Condition ~= nil then
+                    solveExpr(clause.Condition)
+                end
+                solveStat(clause.Body)
+            end
+
+            local condition = stat.Condition
+            if condition.Type == "ParenExpr" then
+                condition = condition.Expression
+            end
+            if condition.Type == "BooleanLiteral" and solveifstats then
+                if condition.Token.Source == "false" then --its useless what lol
+                    if #stat.ElseClauseList > 1 then
+                        if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
+                            local newifstat = clone(stat)
+
+                            --replace clause information
+                            local firstelseclause = newifstat.ElseClauseList[1]
+
+                            --newifstat.Token_Then = firstelseclause.Token_Then
+                            newifstat.Body = firstelseclause.Body
+                            newifstat.Condition = firstelseclause.Condition
+                            table.remove(newifstat.ElseClauseList, 1)
+
+                            stat.Remove()
+                            return stat.NewStat(newifstat, 1)
+                        end
+                    else
+                        local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
+                        if lastclause and not lastclause.Condition then
+                            dbgprint("Attempting to replace token")
+                            --Replace last elseclause as the main will always be performed.
+                            replace(stat, { --__here
+                                Type = 'DoStat';
+                                Body = lastclause.Body;
+                                Token_Do = {
+                                    LeadingWhite = stat:GetFirstToken().LeadingWhite or "",
+                                    Source = "do",
+                                    Type = "Keyword"
+                                };
+                                GetFirstToken = function(self)
+                                    return self.Token_Do
+                                end;
+                                GetLastToken = function(self)
+                                    return self.Token_End
+                                end;
+                            })
+                        else
+                            stat.Remove() --remove it lol
+                        end
+                    end
+                elseif condition.Token.Source == "true" then
+					--[[ --My dumb ahh just realized all this is useless...
+					if stat.ElseClauseList then
+						if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
+							local newifstat = copy(stat)
+	
+							--replace clause information
+							local firstelseclause = newifstat.ElseClauseList[1]
+							--newifstat.Token_Then = firstelseclause.Token_Then
+							newifstat.Body = firstelseclause.Body
+							newifstat.Condition = firstelseclause.Condition
+							table.remove(newifstat.ElseClauseList, 1)
+	
+							stat.NewStat(newifstat, 1)
+						end
+						local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
+						if lastclause and not lastclause.Condition then
+							table.remove(stat.ElseClauseList) --Remove last elseclause, as the else will never be performed.
+						end
+					end
+					]]
+                    replace(stat, { --__here
+                        Type = 'DoStat';
+                        Body = stat.Body;
+                        Token_Do = {
+                            LeadingWhite = stat.Token_If.LeadingWhite or "",
+                            Source = "do",
+                            Type = "Keyword"
+                        };
+                        GetFirstToken = function(self)
+                            return self.Token_Do
+                        end;
+                        GetLastToken = function(self)
+                            return self.Token_End
+                        end;
+                    })
+                end
+            elseif condition.Type == "NilLiteral" then
+                return stat.Remove()
+            end
+
+            if solveifstats then
+                for i = 1, #stat.ElseClauseList do
+                    local clause = stat.ElseClauseList[i]
+                    if clause then
+                        local condition = clause.Condition
+                        if condition and condition.Token and stat.ElseClauseList[i].Token then
+                            if condition.Token.Source == "true" then
+                                repeat
+                                    table.remove(stat.ElseClauseList, i + 1)
+                                until not stat.ElseClauseList[i + 1]
+                                stat.ElseClauseList[i].Condition = nil
+                                stat.ElseClauseList[i].ClauseType = "else"
+                                stat.ElseClauseList[i].Token.Source = "else"
+                            elseif condition.Token.Source == "false" then
+                                table.remove(stat.ElseClauseList, i)
+                            else
+                                error("invalid source to boolean value")
+                            end
+                        end
+                    end
+                end
+            end
+        elseif stat.Type == "CallExprStat" then
+            solveExpr(stat.Expression)
+        elseif stat.Type == "CompoundStat" then
+            solveExpr(stat.Lhs)
+            solveExpr(stat.Rhs)
+        elseif stat.Type == "AssignmentStat" then
+            for i, ex in pairs(stat.Lhs) do
+                solveExpr(ex)
+            end
+            for i, ex in ipairs(stat.Rhs) do
+                solveExpr(ex)
+                local lhsval = stat.Lhs[i]
+                local rhsval = ex
+                if lhsval.Variable then
+                    local curlocation = lhsval.Variable.Location
+                    --if rhsval.Type ~= "BinopExpr" then
+                    lhsval.Variable.Info.LiteralStack[curlocation] = {rhsval, lhsval.Variable.Scope}
+                    --end
+                    --ex.Variable.LiteralVal = stat.Rhs[i]
+                end
+            end
+        else
+            error("unfound: "..tostring(stat.Type))
+        end
+    end
+
+    solveStat(ast)
+    return ast
+end
+
+-- Outputs out an AST to a string, then returns that string
+function StringAst(ast)
+
+    local result = ""
+    local printStat, printExpr;
+
+    local function printt(tk)
+        if not tk.LeadingWhite or not tk.Source then
+            error("Bad token: "..FormatTable(tk))
+        end
+        result = result .. (tk.LeadingWhite)
+        result = result .. (tk.Source)
+    end
+
+    printExpr = function(expr)
+        if expr.Type == 'BinopExpr' then
+            printExpr(expr.Lhs)
+            printt(expr.Token_Op)
+            printExpr(expr.Rhs)
+        elseif expr.Type == 'UnopExpr' then
+            printt(expr.Token_Op)
+            printExpr(expr.Rhs)
+        elseif expr.Type == 'NumberLiteral' or expr.Type == 'StringLiteral' or 
+            expr.Type == 'NilLiteral' or expr.Type == 'BooleanLiteral' or 
+            expr.Type == 'VargLiteral' 
+        then
+            -- Just print the token
+            printt(expr.Token)
+        elseif expr.Type == 'FieldExpr' then
+            printExpr(expr.Base)
+            printt(expr.Token_Dot)
+            printt(expr.Field)
+        elseif expr.Type == 'IndexExpr' then
+            printExpr(expr.Base)
+            printt(expr.Token_OpenBracket)
+            printExpr(expr.Index)
+            printt(expr.Token_CloseBracket)
+        elseif expr.Type == 'MethodExpr' or expr.Type == 'CallExpr' then
+            printExpr(expr.Base)
+            if expr.Type == 'MethodExpr' then
+                printt(expr.Token_Colon)
+                printt(expr.Method)
+            end
+            if expr.FunctionArguments.CallType == 'StringCall' then
+                printt(expr.FunctionArguments.Token)
+            elseif expr.FunctionArguments.CallType == 'ArgCall' then
+                printt(expr.FunctionArguments.Token_OpenParen)
+                for index, argExpr in pairs(expr.FunctionArguments.ArgList) do
+                    printExpr(argExpr)
+                    local sep = expr.FunctionArguments.Token_CommaList[index]
+                    if sep then
+                        printt(sep)
+                    end
+                end
+                printt(expr.FunctionArguments.Token_CloseParen)
+            elseif expr.FunctionArguments.CallType == 'TableCall' then
+                printExpr(expr.FunctionArguments.TableExpr)
+            end
+        elseif expr.Type == 'FunctionLiteral' then
+            printt(expr.Token_Function)
+            printt(expr.Token_OpenParen)
+            for index, arg in pairs(expr.ArgList) do
+                printt(arg)
+                local comma = expr.Token_ArgCommaList[index]
+                if comma then
+                    printt(comma)
+                end
+            end
+            printt(expr.Token_CloseParen)
+            printStat(expr.Body)
+            printt(expr.Token_End)
+        elseif expr.Type == 'VariableExpr' then
+            printt(expr.Token)
+        elseif expr.Type == 'ParenExpr' then
+            printt(expr.Token_OpenParen)
+            --print(expr.Token_OpenParen)
+            printExpr(expr.Expression)
+            printt(expr.Token_CloseParen)
+        elseif expr.Type == 'TableLiteral' then
+            printt(expr.Token_OpenBrace)
+            for index, entry in pairs(expr.EntryList) do
+                if entry.EntryType == 'Field' then
+                    printt(entry.Field)
+                    printt(entry.Token_Equals)
+                    printExpr(entry.Value)
+                elseif entry.EntryType == 'Index' then
+                    printt(entry.Token_OpenBracket)
+                    printExpr(entry.Index)
+                    printt(entry.Token_CloseBracket)
+                    printt(entry.Token_Equals)
+                    printExpr(entry.Value)
+                elseif entry.EntryType == 'Value' then
+                    printExpr(entry.Value)
+                else
+                    error("unreachable")
+                end
+                local sep = expr.Token_SeparatorList[index]
+                if sep then
+                    printt(sep)
+                end
+            end
+            printt(expr.Token_CloseBrace)
+        else
+            error("unreachable, type: "..expr.Type..":"..FormatTable(expr))
+        end
+    end
+
+    printStat = function(stat)
+        if stat.Type == 'StatList' then
+            for index, ch in pairs(stat.StatementList) do
+                printStat(ch)
+                if stat.SemicolonList[index] then
+                    printt(stat.SemicolonList[index])
+                end
+            end
+        elseif stat.Type == 'BreakStat' then
+            printt(stat.Token_Break)
+        elseif stat.Type == 'ReturnStat' then
+            printt(stat.Token_Return)
+            for index, expr in pairs(stat.ExprList) do
+                printExpr(expr)
+                if stat.Token_CommaList[index] then
+                    printt(stat.Token_CommaList[index])
+                end
+            end
+        elseif stat.Type == 'LocalVarStat' then
+            printt(stat.Token_Local)
+            for index, var in pairs(stat.VarList) do
+                printt(var)
+                local comma = stat.Token_VarCommaList[index]
+                if comma then
+                    printt(comma)
+                end
+            end
+            if stat.Token_Equals then
+                printt(stat.Token_Equals)
+                for index, expr in pairs(stat.ExprList) do
+                    printExpr(expr)
+                    local comma = stat.Token_ExprCommaList[index]
+                    if comma then
+                        printt(comma)
+                    end
+                end
+            end
+        elseif stat.Type == 'LocalFunctionStat' then
+            printt(stat.Token_Local)
+            printt(stat.FunctionStat.Token_Function)
+            printt(stat.FunctionStat.NameChain[1])
+            printt(stat.FunctionStat.Token_OpenParen)
+            for index, arg in pairs(stat.FunctionStat.ArgList) do
+                printt(arg)
+                local comma = stat.FunctionStat.Token_ArgCommaList[index]
+                if comma then
+                    printt(comma)
+                end
+            end
+            printt(stat.FunctionStat.Token_CloseParen)
+            printStat(stat.FunctionStat.Body)
+            printt(stat.FunctionStat.Token_End)
+        elseif stat.Type == 'FunctionStat' then
+            printt(stat.Token_Function)
+            for index, part in pairs(stat.NameChain) do
+                printt(part)
+                local sep = stat.Token_NameChainSeparator[index]
+                if sep then
+                    printt(sep)
+                end
+            end
+            printt(stat.Token_OpenParen)
+            for index, arg in pairs(stat.ArgList) do
+                printt(arg)
+                local comma = stat.Token_ArgCommaList[index]
+                if comma then
+                    printt(comma)
+                end
+            end
+            printt(stat.Token_CloseParen)
+            printStat(stat.Body)
+            printt(stat.Token_End)
+        elseif stat.Type == 'RepeatStat' then
+            printt(stat.Token_Repeat)
+            printStat(stat.Body)
+            printt(stat.Token_Until)
+            printExpr(stat.Condition)
+        elseif stat.Type == 'GenericForStat' then
+            printt(stat.Token_For)
+            for index, var in pairs(stat.VarList) do
+                printt(var)
+                local sep = stat.Token_VarCommaList[index]
+                if sep then
+                    printt(sep)
+                end
+            end
+            printt(stat.Token_In)
+            for index, expr in pairs(stat.GeneratorList) do
+                printExpr(expr)
+                local sep = stat.Token_GeneratorCommaList[index]
+                if sep then
+                    printt(sep)
+                end
+            end
+            printt(stat.Token_Do)
+            printStat(stat.Body)
+            printt(stat.Token_End)
+        elseif stat.Type == 'NumericForStat' then
+            printt(stat.Token_For)
+            for index, var in pairs(stat.VarList) do
+                printt(var)
+                local sep = stat.Token_VarCommaList[index]
+                if sep then
+                    printt(sep)
+                end
+            end
+            printt(stat.Token_Equals)
+            for index, expr in pairs(stat.RangeList) do
+                printExpr(expr)
+                local sep = stat.Token_RangeCommaList[index]
+                if sep then
+                    printt(sep)
+                end
+            end
+            printt(stat.Token_Do)
+            printStat(stat.Body)
+            printt(stat.Token_End)		
+        elseif stat.Type == 'WhileStat' then
+            printt(stat.Token_While)
+            printExpr(stat.Condition)
+            printt(stat.Token_Do)
+            printStat(stat.Body)
+            printt(stat.Token_End)
+        elseif stat.Type == 'DoStat' then
+            printt(stat.Token_Do)
+            printStat(stat.Body)
+            printt(stat.Token_End)
+        elseif stat.Type == 'IfStat' then
+            printt(stat.Token_If)
+            printExpr(stat.Condition)
+            printt(stat.Token_Then)
+            printStat(stat.Body)
+            for _, clause in pairs(stat.ElseClauseList) do
+                printt(clause.Token)
+                if clause.Condition then
+                    printExpr(clause.Condition)
+                    printt(clause.Token_Then)
+                end
+                printStat(clause.Body)
+            end
+            printt(stat.Token_End)
+        elseif stat.Type == 'CallExprStat' then
+            printExpr(stat.Expression)
+        elseif stat.Type == 'AssignmentStat' then
+            for index, ex in pairs(stat.Lhs) do
+                printExpr(ex)
+                local sep = stat.Token_LhsSeparatorList[index]
+                if sep then
+                    printt(sep)
+                end
+            end
+            printt(stat.Token_Equals)
+            for index, ex in pairs(stat.Rhs) do
+                printExpr(ex)
+                local sep = stat.Token_RhsSeparatorList[index]
+                if sep then
+                    printt(sep)
+                end
+            end
+        else
+            error("unreachable")
+        end
+    end
+
+    printStat(ast)
+
+    return result
+end
+
+--#endregion
+
+--#region Formatters
 
 -- Adds / removes whitespace in an AST to put it into a "standard formatting"
 local function FormatAst(ast)
@@ -2902,27 +4111,32 @@ local function StripAst(ast)
 
     return ast
 end
+--#endregion
 
-local idGen = 0
-local VarDigits = {}
-for i = ('a'):byte(), ('z'):byte() do table.insert(VarDigits, string.char(i)) end
-for i = ('A'):byte(), ('Z'):byte() do table.insert(VarDigits, string.char(i)) end
-for i = ('0'):byte(), ('9'):byte() do table.insert(VarDigits, string.char(i)) end
-table.insert(VarDigits, '_')
-local VarStartDigits = {}
-for i = ('a'):byte(), ('z'):byte() do table.insert(VarStartDigits, string.char(i)) end
-for i = ('A'):byte(), ('Z'):byte() do table.insert(VarStartDigits, string.char(i)) end
-local function indexToVarName(index)
-    local id = ''
-    local d = index % #VarStartDigits
-    index = (index - d) / #VarStartDigits
-    id = id..VarStartDigits[d+1]
-    while index > 0 do
-        local d = index % #VarDigits
-        index = (index - d) / #VarDigits
-        id = id..VarDigits[d+1]
+--#region Variable Renaming Functions
+--Generate Variable names for MinifyVariables
+local indexToVarName do
+    local idGen = 0
+    local VarDigits = {}
+    for i = ('a'):byte(), ('z'):byte() do table.insert(VarDigits, string.char(i)) end
+    for i = ('A'):byte(), ('Z'):byte() do table.insert(VarDigits, string.char(i)) end
+    for i = ('0'):byte(), ('9'):byte() do table.insert(VarDigits, string.char(i)) end
+    table.insert(VarDigits, '_')
+    local VarStartDigits = {}
+    for i = ('a'):byte(), ('z'):byte() do table.insert(VarStartDigits, string.char(i)) end
+    for i = ('A'):byte(), ('Z'):byte() do table.insert(VarStartDigits, string.char(i)) end
+    indexToVarName = function (index)
+        local id = ''
+        local d = index % #VarStartDigits
+        index = (index - d) / #VarStartDigits
+        id = id..VarStartDigits[d+1]
+        while index > 0 do
+            local d = index % #VarDigits
+            index = (index - d) / #VarDigits
+            id = id..VarDigits[d+1]
+        end
+        return id
     end
-    return id
 end
 
 local function MinifyVariables(globalScope, rootScope)
@@ -3221,1190 +4435,11 @@ local function BeautifyVariables(globalScope, rootScope)
     end
     modify(rootScope)
 end
+--#endregion
 
--- Prints out an AST to a string
-function StringAst(ast)
+--#region Module Interface Functions
 
-    local result = ""
-    local printStat, printExpr;
-
-    local function printt(tk)
-        if not tk.LeadingWhite or not tk.Source then
-            error("Bad token: "..FormatTable(tk))
-        end
-        result = result .. (tk.LeadingWhite)
-        result = result .. (tk.Source)
-    end
-
-    printExpr = function(expr)
-        if expr.Type == 'BinopExpr' then
-            printExpr(expr.Lhs)
-            printt(expr.Token_Op)
-            printExpr(expr.Rhs)
-        elseif expr.Type == 'UnopExpr' then
-            printt(expr.Token_Op)
-            printExpr(expr.Rhs)
-        elseif expr.Type == 'NumberLiteral' or expr.Type == 'StringLiteral' or 
-            expr.Type == 'NilLiteral' or expr.Type == 'BooleanLiteral' or 
-            expr.Type == 'VargLiteral' 
-        then
-            -- Just print the token
-            printt(expr.Token)
-        elseif expr.Type == 'FieldExpr' then
-            printExpr(expr.Base)
-            printt(expr.Token_Dot)
-            printt(expr.Field)
-        elseif expr.Type == 'IndexExpr' then
-            printExpr(expr.Base)
-            printt(expr.Token_OpenBracket)
-            printExpr(expr.Index)
-            printt(expr.Token_CloseBracket)
-        elseif expr.Type == 'MethodExpr' or expr.Type == 'CallExpr' then
-            printExpr(expr.Base)
-            if expr.Type == 'MethodExpr' then
-                printt(expr.Token_Colon)
-                printt(expr.Method)
-            end
-            if expr.FunctionArguments.CallType == 'StringCall' then
-                printt(expr.FunctionArguments.Token)
-            elseif expr.FunctionArguments.CallType == 'ArgCall' then
-                printt(expr.FunctionArguments.Token_OpenParen)
-                for index, argExpr in pairs(expr.FunctionArguments.ArgList) do
-                    printExpr(argExpr)
-                    local sep = expr.FunctionArguments.Token_CommaList[index]
-                    if sep then
-                        printt(sep)
-                    end
-                end
-                printt(expr.FunctionArguments.Token_CloseParen)
-            elseif expr.FunctionArguments.CallType == 'TableCall' then
-                printExpr(expr.FunctionArguments.TableExpr)
-            end
-        elseif expr.Type == 'FunctionLiteral' then
-            printt(expr.Token_Function)
-            printt(expr.Token_OpenParen)
-            for index, arg in pairs(expr.ArgList) do
-                printt(arg)
-                local comma = expr.Token_ArgCommaList[index]
-                if comma then
-                    printt(comma)
-                end
-            end
-            printt(expr.Token_CloseParen)
-            printStat(expr.Body)
-            printt(expr.Token_End)
-        elseif expr.Type == 'VariableExpr' then
-            printt(expr.Token)
-        elseif expr.Type == 'ParenExpr' then
-            printt(expr.Token_OpenParen)
-            --print(expr.Token_OpenParen)
-            printExpr(expr.Expression)
-            printt(expr.Token_CloseParen)
-        elseif expr.Type == 'TableLiteral' then
-            printt(expr.Token_OpenBrace)
-            for index, entry in pairs(expr.EntryList) do
-                if entry.EntryType == 'Field' then
-                    printt(entry.Field)
-                    printt(entry.Token_Equals)
-                    printExpr(entry.Value)
-                elseif entry.EntryType == 'Index' then
-                    printt(entry.Token_OpenBracket)
-                    printExpr(entry.Index)
-                    printt(entry.Token_CloseBracket)
-                    printt(entry.Token_Equals)
-                    printExpr(entry.Value)
-                elseif entry.EntryType == 'Value' then
-                    printExpr(entry.Value)
-                else
-                    error("unreachable")
-                end
-                local sep = expr.Token_SeparatorList[index]
-                if sep then
-                    printt(sep)
-                end
-            end
-            printt(expr.Token_CloseBrace)
-        else
-            error("unreachable, type: "..expr.Type..":"..FormatTable(expr))
-        end
-    end
-
-    printStat = function(stat)
-        if stat.Type == 'StatList' then
-            for index, ch in pairs(stat.StatementList) do
-                printStat(ch)
-                if stat.SemicolonList[index] then
-                    printt(stat.SemicolonList[index])
-                end
-            end
-        elseif stat.Type == 'BreakStat' then
-            printt(stat.Token_Break)
-        elseif stat.Type == 'ReturnStat' then
-            printt(stat.Token_Return)
-            for index, expr in pairs(stat.ExprList) do
-                printExpr(expr)
-                if stat.Token_CommaList[index] then
-                    printt(stat.Token_CommaList[index])
-                end
-            end
-        elseif stat.Type == 'LocalVarStat' then
-            printt(stat.Token_Local)
-            for index, var in pairs(stat.VarList) do
-                printt(var)
-                local comma = stat.Token_VarCommaList[index]
-                if comma then
-                    printt(comma)
-                end
-            end
-            if stat.Token_Equals then
-                printt(stat.Token_Equals)
-                for index, expr in pairs(stat.ExprList) do
-                    printExpr(expr)
-                    local comma = stat.Token_ExprCommaList[index]
-                    if comma then
-                        printt(comma)
-                    end
-                end
-            end
-        elseif stat.Type == 'LocalFunctionStat' then
-            printt(stat.Token_Local)
-            printt(stat.FunctionStat.Token_Function)
-            printt(stat.FunctionStat.NameChain[1])
-            printt(stat.FunctionStat.Token_OpenParen)
-            for index, arg in pairs(stat.FunctionStat.ArgList) do
-                printt(arg)
-                local comma = stat.FunctionStat.Token_ArgCommaList[index]
-                if comma then
-                    printt(comma)
-                end
-            end
-            printt(stat.FunctionStat.Token_CloseParen)
-            printStat(stat.FunctionStat.Body)
-            printt(stat.FunctionStat.Token_End)
-        elseif stat.Type == 'FunctionStat' then
-            printt(stat.Token_Function)
-            for index, part in pairs(stat.NameChain) do
-                printt(part)
-                local sep = stat.Token_NameChainSeparator[index]
-                if sep then
-                    printt(sep)
-                end
-            end
-            printt(stat.Token_OpenParen)
-            for index, arg in pairs(stat.ArgList) do
-                printt(arg)
-                local comma = stat.Token_ArgCommaList[index]
-                if comma then
-                    printt(comma)
-                end
-            end
-            printt(stat.Token_CloseParen)
-            printStat(stat.Body)
-            printt(stat.Token_End)
-        elseif stat.Type == 'RepeatStat' then
-            printt(stat.Token_Repeat)
-            printStat(stat.Body)
-            printt(stat.Token_Until)
-            printExpr(stat.Condition)
-        elseif stat.Type == 'GenericForStat' then
-            printt(stat.Token_For)
-            for index, var in pairs(stat.VarList) do
-                printt(var)
-                local sep = stat.Token_VarCommaList[index]
-                if sep then
-                    printt(sep)
-                end
-            end
-            printt(stat.Token_In)
-            for index, expr in pairs(stat.GeneratorList) do
-                printExpr(expr)
-                local sep = stat.Token_GeneratorCommaList[index]
-                if sep then
-                    printt(sep)
-                end
-            end
-            printt(stat.Token_Do)
-            printStat(stat.Body)
-            printt(stat.Token_End)
-        elseif stat.Type == 'NumericForStat' then
-            printt(stat.Token_For)
-            for index, var in pairs(stat.VarList) do
-                printt(var)
-                local sep = stat.Token_VarCommaList[index]
-                if sep then
-                    printt(sep)
-                end
-            end
-            printt(stat.Token_Equals)
-            for index, expr in pairs(stat.RangeList) do
-                printExpr(expr)
-                local sep = stat.Token_RangeCommaList[index]
-                if sep then
-                    printt(sep)
-                end
-            end
-            printt(stat.Token_Do)
-            printStat(stat.Body)
-            printt(stat.Token_End)		
-        elseif stat.Type == 'WhileStat' then
-            printt(stat.Token_While)
-            printExpr(stat.Condition)
-            printt(stat.Token_Do)
-            printStat(stat.Body)
-            printt(stat.Token_End)
-        elseif stat.Type == 'DoStat' then
-            printt(stat.Token_Do)
-            printStat(stat.Body)
-            printt(stat.Token_End)
-        elseif stat.Type == 'IfStat' then
-            printt(stat.Token_If)
-            printExpr(stat.Condition)
-            printt(stat.Token_Then)
-            printStat(stat.Body)
-            for _, clause in pairs(stat.ElseClauseList) do
-                printt(clause.Token)
-                if clause.Condition then
-                    printExpr(clause.Condition)
-                    printt(clause.Token_Then)
-                end
-                printStat(clause.Body)
-            end
-            printt(stat.Token_End)
-        elseif stat.Type == 'CallExprStat' then
-            printExpr(stat.Expression)
-        elseif stat.Type == 'AssignmentStat' then
-            for index, ex in pairs(stat.Lhs) do
-                printExpr(ex)
-                local sep = stat.Token_LhsSeparatorList[index]
-                if sep then
-                    printt(sep)
-                end
-            end
-            printt(stat.Token_Equals)
-            for index, ex in pairs(stat.Rhs) do
-                printExpr(ex)
-                local sep = stat.Token_RhsSeparatorList[index]
-                if sep then
-                    printt(sep)
-                end
-            end
-        else
-            error("unreachable")
-        end
-    end
-
-    printStat(ast)
-
-    return result
-end
-
---Solve the Solveable math in an ast
-local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, solveindexes)
-    local ast = ast
-    local canSolve = {
-        NumberLiteral = true,
-        BooleanLiteral = true,
-        StringLiteral = true,
-        HashLiteral = true,
-        NilLiteral = true,
-        TableLiteral = true,
-        ParenExpr = true,
-        BinopExpr = true
-    }
-
-    local replaceTypes = {
-        NumberLiteral = true,
-        BooleanLiteral = true,
-        StringLiteral = true,
-        HashLiteral = true,
-        NilLiteral = true,
-    }
-
-    local function isfinite(num)
-        return num == num and num ~= math.huge and num ~= -math.huge
-    end
-
-    local function solvebuiltincall()
-
-    end
-
-
-    local function createtype(type, val, type2, noleadingwhite)
-        type2 = type2 or "Number"
-        return {
-            Type = type,
-            Token = {
-                Type = type2,
-                LeadingWhite = (noleadingwhite and "" or " "),
-                Source = val
-            },
-            GetFirstToken = function(self)
-                return self.Token --(noleadingwhite and tostring(val):sub(1,1) or " ")
-            end,
-            GetLastToken = function(self)
-                return self.Token
-            end
-        }
-    end
-
-
-    local function createbinop(operator, lhs, rhs, leadingwhite)
-        return {
-            Type = "BinopExpr",
-            Token_Op = { Type = "Symbol", LeadingWhite = leadingwhite, Source = operator },
-            Lhs = lhs,
-            Rhs = rhs,
-            GetFirstToken = function()
-                return lhs.GetFirstToken()
-            end,
-            GetLastToken = function()
-                return rhs.GetLastToken()
-            end
-        }
-    end
-
-    local function createunop(operator, rhs, leadingwhite)
-        return {
-            Type = "UnopExpr",
-            Token_Op = { Type = "Symbol", LeadingWhite = leadingwhite, Source = operator },
-            Rhs = rhs,
-            GetFirstToken = function()
-                return rhs.Token_Op
-            end,
-            GetLastToken = function()
-                return rhs.GetLastToken()
-            end
-        }
-    end
-
-    --replace without making a new variable, as tables are all "references", replace all of b into a
-    local function replace(a, b)
-        if b == nil then return end
-        for i, v in pairs(b) do
-            a[i] = v
-        end
-    end
-
-    local function removething(a)
-        if a == nil or type(a) ~= "string" then return end
-
-        local start = a:sub(1, 1)
-        local ret
-        if start == '"' or start == "'" then
-            ret = a:sub(2, #a - 1)
-        elseif start == '[' then
-            local count = 0
-            local p = 2
-            while a:sub(p, p) == '=' do
-                count = count + 1
-                p = p + 1
-            end
-
-            ret = a:sub(2 + count, #a - 2 - count)
-        end
-
-        if ret == nil then return '' end
-
-        local newret = ''
-        for i = 1, #ret do
-            local c = ret:sub(i, i)
-
-            if c == "'" or c == '"' then
-                newret = newret .. '\\' .. c
-            else
-                newret = newret .. c
-            end
-        end
-        return newret
-    end
-
-    local function removeParen(a)
-        if type(a) == "table" and a.Type == "ParenExpr" then
-            a = a.Expression
-        end
-    end
-
-    --solve a possible codepath within a function
-    local function getvarwithcodepath(expr, scope)
-        local parentalstack = {} --Place the parents into a stack
-        local currentscope = scope
-        while currentscope.ParentScope do
-            table.insert(parentalstack, 1, currentscope.ParentScope)
-            currentscope = currentscope.ParentScope
-        end
-        --print("parentalstack:")
-        --printtab(parentalstack)
-    end
-
-    --determines if a expression is safe to replace if the stack is no more than 1
-    local function safetoreplace(literalstack)  --solving point!!
-        for _, literal in pairs(literalstack) do
-            if type(literal) == "table" and not replaceTypes[literal.Type] then
-                return false
-            end
-        end
-        return true
-    end
-
-    
-
-    --attempt to resolve the literal from a variable
-    local function resolveliteral(expr, noreplace)
-        local var = expr.Variable
-        if solveconstants and var and var.Info then
-            dbgprint("literal", var.Location, var.Info.LiteralStack)
-            dbgprinttab(var.Info.LiteralStack)
-            --getvarwithcodepath(expr, var.Scope)
-            local location = var.Location
-            local literalfound, literalscope
-            while true do
-                if var.Location - 1 ~= location and var.Location ~= location then --dont want to look for ourselves, as an assignment
-                    local data = var.Info.LiteralStack[location]
-                    if data then
-                        literalfound, literalscope = data[1], data[2]
-                        if literalfound then
-                            dbgprinttab(literalfound)
-                            if literalfound.Type == "CallExprStat" or literalfound.Type == "CallExpr" then
-                                dbgprint("is call, voiding..")
-                                return
-                            elseif literalfound.Type == "BinopExpr" then
-                                dbgprint("is binop, break..")
-                                break
-                            elseif not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
-                                    dbgprint("lower Scope, nvm..")
-                                    --return --dont return just continue
-                            else
-                                break --we good
-                            end
-                        end
-                    elseif location <= 0 then
-                        dbgprint("not found")
-                        break
-                    end
-                end
-                location = location - 1
-            end
-
-            --true means its voided, most likley due to a call to a function that effects this variable, which we cant predict greatly.
-
-            dbgprint("found the literal:", literalfound)
-            dbgprint("expr:")
-            dbgprinttab(expr, 2)
-
-            if literalfound then --not finding a literal also returns, and if we dont have it in replacetypes. expection that its a global as it might be a built-in
-                if literalfound.Type == "VariableExpr" then
-                    return resolveliteral(literalfound, noreplace)
-                else
-                    dbgprint("the stack:")
-                    dbgprinttab(var.Info.LiteralStack)
-                    if replaceconstants and safetoreplace(var.Info.LiteralStack) and not noreplace then --solving point!!
-                        replace(expr, literalfound)
-                    end
-                    return literalfound
-                end
-            elseif expr.Variable and expr.Variable.Info.Type == "Global" then
-                dbgprint("expection as its global")
-                return expr --might just be a built in function
-            end
-        end
-    end
-
-    local function solvebinop(operator, left1, right1, leadingwhite)
-        --task.wait()
-        dbgprint("MATHSOLVE: SOLVING BINOP: ",operator,left1,right1)
-        local lhs = left1
-        local rhs = right1
-        if type(left1) == "table" and left1.Type == "ParenExpr" then lhs = left1.Expression end
-        if type(right1) == "table" and right1.Type == "ParenExpr" then rhs = right1.Expression end
-
-        --print("types:", lhs and lhs.Type, rhs and rhs.Type)
-
-        do --Unknown variables solving
-            if lhs.Type == "VariableExpr" then
-                lhs = resolveliteral(lhs)
-            end
-
-            if rhs.Type == "VariableExpr" then
-                rhs = resolveliteral(rhs)
-            end
-        end
-        do --Voids
-            if
-                lhs == nil or rhs == nil --Must exist
-                or lhs.Type == nil or rhs.Type == nil
-            then
-                return
-            end
-
-            --Returns could vary
-            if lhs.Type == "CallExpr" or rhs.Type == "CallExpr" then
-                return
-            end
-
-            --Always solve lower binops first!
-            if lhs.Type == "BinopExpr" or rhs.Type == "BinopExpr" then
-                return
-            end
-
-            --We still have variables even after solving..
-            if lhs.Type == "VariableExpr" or rhs.Type == "VariableExpr" then
-                return
-            end
-        end
-
-        local a = (lhs.Token or (lhs.Expression and lhs.Expression.Token)) or nil
-        local b = (rhs.Token or (rhs.Expression and rhs.Expression.Token)) or nil
-
-        local lSrc = a and a.Source or nil
-        local rSrc = b and b.Source or nil
-
-        local left, right
-        if lhs.Type == "BooleanLiteral" then left = lSrc == "true" and true or false end
-        if rhs.Type == "BooleanLiteral" then right = rSrc == "true" and true or false end
-
-        if lhs.Type == "NumberLiteral" then
-            left = tonumber(lSrc)
-            if left == nil then return end
-        end
-        if rhs.Type == "NumberLiteral" then
-            right = tonumber(rSrc)
-            if right == nil then return end
-        end
-
-        if lhs.Type == "StringLiteral" or lhs.Type == 'HashLiteral' then left = tostring(lSrc) end
-        if rhs.Type == "StringLiteral" or rhs.Type == 'HashLiteral' then right = tostring(rSrc) end
-
-        if left ~= nil and right ~= nil then
-            if operator == "==" then return left == right end
-            if operator == "~=" then return left ~= right end
-            if operator == "and" then return left and right end
-            if operator == "or" then return left or right end
-            if operator == ".." and lhs.Type == "StringLiteral" and rhs.Type == "StringLiteral" then
-                return '"' .. removething(lSrc) .. removething(rSrc) .. '"'
-            end
-
-            if lhs.Type == "StringLiteral" then left = tonumber(removething(left)) end
-            if rhs.Type == "StringLiteral" then right = tonumber(removething(right)) end
-
-            if left == nil or right == nil then return end
-
-            local val
-            if operator == "+" then val = left + right end
-            if operator == "-" then val = left - right end
-            if operator == "*" then val = left * right end
-            if operator == "/" then val = left / right end
-            if operator == "^" then val = left ^ right end
-            if operator == "%" then val = left % right end
-
-            if operator == ">" then val = left > right end
-            if operator == "<" then val = left < right end
-            if operator == ">=" then val = left >= right end
-            if operator == "<=" then val = left <= right end
-
-            if type(val) == "boolean" or (type(val) == "number" and isfinite(val) and val > -(10 ^ 52) and val < 10 ^ 52) then
-                --print("returns:", val)
-                return val
-            end
-        end
-    end
-
-    local function solveunop(operator, rhs, leadingwhite)
-        local b = rhs.Token or (rhs.Expression and rhs.Expression.Token) or rhs.EntryList or rhs
-
-        if b == nil then return end
-        if b.Source == nil and rhs.Type ~= "TableLiteral" then return end
-
-        if rhs.Type == "VariableExpr" or rhs.Type == "CallExpr" or rhs.Type == "BinopExpr" then return end
-
-        local rSrc = b.Source
-        local right
-
-        if rhs.Type == "TableLiteral" and b ~= nil then
-            local extra = {}
-            local amount = 0
-            local ignoreRest = false
-            local no = false
-            local lastIndex = 0
-
-            for i, v in ipairs(b) do
-                if ignoreRest then
-                    table.insert(extra, v)
-                else
-                    if v.EntryType == "Value" or v.EntryType == "Index" then
-                        if (v.Index == nil or v.Index.Type == "NumberLiteral") and v.Value then
-                            local index = (v.Index ~= nil and v.Index.Token ~= nil and v.Index.Token.Source ~= nil) and v.Index.Token.Source or lastIndex + 1
-
-                            if tostring(index) ~= tostring(lastIndex + 1) then
-                                ignoreRest = true
-                                no = true
-                                table.insert(extra, v)
-                                break
-                            end
-
-                            if v.Value.Type ~= "CallExpr" then
-                                amount = amount + 1
-                            else
-                                ignoreRest = true
-                                table.insert(extra, v)
-                            end
-                        else
-                            table.insert(extra, v)
-                        end
-                    end
-                end
-            end
-
-            if no then return end
-
-            if operator == "#" then
-                rhs.EntryList = extra
-
-                if #rhs.EntryList <= 0 then
-                    return createtype("NumberLiteral", amount or #rhs.EntryList, #leadingwhite <= 0)
-                elseif amount <= 0 then
-                    return createunop("#", rhs, leadingwhite)
-                end
-
-                local newex = createbinop("+", createtype("NumberLiteral", amount), createunop("#", rhs), leadingwhite)
-                return newex
-            end
-        end
-
-        if rhs.Type == "BooleanLiteral" then right = rSrc == "true" and true or false end
-        if rhs.Type == "NumberLiteral" then
-            right = tonumber(rSrc)
-            if right == nil then return end
-        end
-        if rhs.Type == "StringLiteral" then right = rSrc:sub(2, #rSrc - 1) end
-
-        if operator == "not" and rhs.Type ~= nil then
-            if rhs.Type == "NilLiteral" or (rhs.Type == "BooleanLiteral" and right == false) then return true end
-            return false
-        end
-
-        if right ~= nil then
-            if operator == "#" then return #right end
-            if operator == "-" then return -right end
-        end
-    end
-
-    local solveStat, solveExpr;
-
-    function solveExpr(expr)
-        --warn("MATHSOLVE: SOLVING EXPR: ", expr)
-        if expr.Type == "BinopExpr" then
-            solveExpr(expr.Lhs)
-            solveExpr(expr.Rhs)
-
-            if expr.Lhs ~= nil and expr.Rhs ~= nil then
-                local firsttoken = expr:GetFirstToken()
-                local tokenOp = expr.Token_Op
-
-                if tokenOp ~= nil and tokenOp.Source ~= nil and firsttoken then
-                    local val = solvebinop(tokenOp.Source, expr.Lhs, expr.Rhs)
-
-                    dbgprint("returns of binop solve:")
-                    dbgprinttab(val)
-
-                    if val ~= nil then
-                        if type(val) == "boolean" then
-                            local b = createtype("BooleanLiteral", tostring(val), "Keyword", #firsttoken.LeadingWhite <= 0)
-                            replace(expr, b)
-                            return
-                        elseif type(val) == "number" then
-                            if isfinite(val) then
-                                local num = createtype("NumberLiteral", tostring(val), "Number", #firsttoken.LeadingWhite <= 0)
-                                replace(expr, num)
-                                return
-                            end
-                        elseif type(val) == "string" then
-                            local str = createtype("StringLiteral", val, "String", #firsttoken.LeadingWhite <= 0)
-                            replace(expr, str)
-                            return
-                        elseif type(val) == "table" then
-                            replace(expr, val)
-                            return
-                        end
-                        return
-                    end
-                end
-
-                if expr.Lhs.Type == "ParenExpr" then
-                    local exprt = expr.Lhs
-                    local expression = exprt.Expression
-                    if expression.Type == "NumberLiteral" or expression.Type == "StringLiteral"
-                        or expression.Type == "NilLiteral" or expression.Type == "BooleanLiteral" or expression.Type == 'HashLiteral' then
-                    end
-                end
-                if expr.Rhs.Type == "ParenExpr" then
-                    local exprt = expr.Rhs
-                    local expression = exprt.Expression
-                    if expression.Type == "NumberLiteral" or expression.Type == "StringLiteral"
-                        or expression.Type == "NilLiteral" or expression.Type == "BooleanLiteral" or expression.Type == 'HashLiteral' then
-                    end
-                end
-            end
-        elseif expr.Type == "UnopExpr" then
-            --solveExpr(expr.Rhs) --causes infinite loop on `myvar = -myvar` (alteast from my experience), so i moved it down
-
-            if expr.Rhs ~= nil and canSolve[expr.Rhs.Type] == true then
-                solveExpr(expr.Rhs) --ofcourse solve it
-
-                local tokenOp = expr.Token_Op
-
-                if tokenOp ~= nil and tokenOp.Source ~= nil then
-                    local rhs = expr.Rhs.Expression or expr.Rhs
-                    local val = solveunop(tokenOp.Source, rhs, tokenOp.LeadingWhite)
-
-                    if val ~= nil then
-                        if type(val) == "boolean" then
-                            local b = createtype("BooleanLiteral", tostring(val), "Keyword")
-                            replace(expr, b)
-                            return
-                        elseif type(val) == "number" then
-                            if isfinite(val) then
-                                local num = createtype("NumberLiteral", tostring(val), "Number")
-                                replace(expr, num)
-                                return
-                            end
-                        elseif type(val) == "string" then
-                            local str = createtype("StringLiteral", val, "String")
-                            replace(expr, str)
-                            return
-                        elseif type(val) == "table" then
-                            replace(expr, val)
-                            return
-                        end
-                        return
-                    end
-                end
-            end
-        elseif (expr.Type == "NumberLiteral" or expr.Type == "StringLiteral"
-            or expr.Type == "NilLiteral" or expr.Type == "BooleanLiteral"
-            or expr.Type == "VargLiteral" or expr.Type == 'HashLiteral') then
-            local token = expr.Token
-            if token ~= nil then
-                if token.Type == "Number" then
-                    local int = {}
-                    for part in token.Source:gmatch('([^e]+)') do
-                        int[#int + 1] = part
-                    end	
-                    if #int == 2 then
-                        dbgprint("EXPONENT: ", token.Source)
-                        local l = tonumber(int[1])
-                        local r = tonumber(int[2])
-                        if l and r then
-                            if isfinite(l) and isfinite(r) and (l ^ r) < 999999999 and (not token.Source:find('+') and token.Source:find('.') and not token.Source:find('-')) then
-                                token.Source = tostring(l ^ r)
-                            end
-                        end
-                    end
-                end				
-
-                if token.Type == "String" then
-                    token.Source = token.Source:gsub("\\\\%d+", function(got)
-                        local num = tonumber(got:sub(2, #got - 1))
-
-                        if num and isfinite(num) and (
-                            (num >= 97 and num <= 122)
-                                or (num >= 65 and num <= 90)
-                                or (num >= 33 and num <= 47)
-                                or (num >= 58 and num <= 64)
-                                or (num >= 91 and num <= 96)
-                                or (num >= 123 and num <= 126)
-                            ) and num ~= 34 and num ~= 39 and num ~= 92 then
-                            return string.char(num)
-                        end
-
-                        return got
-                    end)
-                end
-            end
-        elseif expr.Type == "TableLiteral" then
-            for i, entry in ipairs(expr.EntryList) do
-                if entry.EntryType == "Field" then
-                    solveExpr(entry.Value)
-                elseif entry.EntryType == "Index" then
-                    solveExpr(entry.Index)
-                    solveExpr(entry.Value)
-                elseif entry.EntryType == "Value" then
-                    solveExpr(entry.Value)
-                else
-                    error("unreachable")
-                end
-            end
-        elseif expr.Type == "CallExpr" or expr.Type == "MethodExpr" then
-            warn('call expor:', expr)
-            local base = expr.Base
-            if base.Type == "VariableExpr" then --setmetatable anti solve
-                dbgprint("attemping to anti mt")
-                local basesolved = resolveliteral(base, true) or base
-                local var = basesolved.Variable
-                if var and var.Info.Type == "Global" then
-                    if var.Info.Name == "setmetatable" then --void if metatable
-                        local creatingmt = expr.FunctionArguments.ArgList[1]
-                        if creatingmt.Type == "VariableExpr" and creatingmt.Variable then
-                            dbgprint("saved the mt!")
-                            dbgprinttab(creatingmt)
-                            creatingmt.Variable.Info.LiteralStack[base.Variable.Location] = {expr, var.Scope}
-                        end
-                    end
-                end
-            end
-            if expr.FunctionArguments then
-                if expr.FunctionArguments.ArgList then
-                    for i, ch in ipairs(expr.FunctionArguments.ArgList) do
-                        if ch == nil or ch.Type == nil then
-                            return
-                        end
-                        warn("solve arg2", ch)
-                        solveExpr(ch)
-                    end
-                end
-            end
-        elseif expr.Type == "FunctionLiteral" then
-            dbgprint("solving literal func", expr.Body)
-            solveStat(expr.Body)
-        elseif expr.Type == "ParenExpr" then
-            dbgprint("paren expr!")
-            solveExpr(expr.Expression)
-        elseif expr.Type == "IndexExpr" or expr.Type == "FieldExpr" then
-            local indexorfield = expr.Index or expr.Field
-            dbgprint("index / field expr!",  solveindexes, indexorfield.Type)
-            solveExpr(expr.Base)
-            solveExpr(indexorfield)
-            if (canSolve[indexorfield.Type] or indexorfield.Type == "Ident") and solveindexes then
-                dbgprint("attempt 1 solve")
-                local literaltable = resolveliteral(expr.Base, true)
-                dbgprinttab(indexorfield)
-                if literaltable and literaltable.Type == "TableLiteral" then
-                    local entrylist = literaltable.EntryList
-                    dbgprint("heres the expr index thingy")
-                    dbgprinttab(indexorfield)
-                    local indexsource do
-                        if indexorfield.Type == "NumberLiteral" then
-                            indexsource = tonumber(indexorfield.Token.Source)
-                        elseif indexorfield.Type == "StringLiteral" then
-                            indexsource = indexorfield.Token.Source:sub(2, -2) --only have the actual string
-                        elseif indexorfield.Type == "Ident" then
-                            indexsource = indexorfield.Source -- for field expr
-                        end
-                    end
-                    dbgprint("index source:", indexsource)
-                    dbgprint("indexing list:")
-                    dbgprinttab(entrylist)
-
-                    local entryValue
-                    for index, entry in ipairs(entrylist) do
-                        if entry.EntryType == "Value" and index == indexsource then
-                            entryValue = entry.Value
-                            break
-                        elseif entry.EntryType == "Field" and entry.Field then
-                            if entry.Field.Type == "Ident" and entry.Field.Source == indexsource then
-                                entryValue = entry.Value
-                            end
-                        end
-                    end
-                    if entryValue then
-                        local entryclone = clonedeep(entryValue) --BE CAREFUL, luckily this never references "upward", so no loops.
-                        dbgprint("successfully replaced index!")
-                        local beforeleadingwhite = expr:GetFirstToken().LeadingWhite
-                        replace(expr, entryclone)
-                        entryclone:GetFirstToken().LeadingWhite = beforeleadingwhite --make sure to transfer leadingwhite
-                        dbgprinttab(expr)
-                    end
-                end
-            end
-        end
-    end
-
-    function solveStat(stat)
-        if stat.Type == "StatList" then
-            for i, ch in ipairs(stat.StatementList) do
-                if ch == nil or ch.Type == nil then
-                    return
-                end
-
-                ch.NewStat = function(Stat, RelativePos)
-                    table.insert(stat.StatementList, i + RelativePos, Stat)
-                end
-
-                ch.Remove = function()
-                    local firstoken = stat.StatementList[i]:GetFirstToken()
-                    local nextstat = stat.StatementList[i + 1]
-                    if firstoken and nextstat then
-                        local leadwhite = firstoken.LeadingWhite
-                        local nexttoken = nextstat:GetFirstToken()
-                        if nexttoken and leadwhite then --Pass on leading white
-                            if leadwhite:sub(#leadwhite) == "\n" then --remove new line from the removed statement
-                                leadwhite = leadwhite:sub(1, #leadwhite - 1)
-                            end
-                            nexttoken.LeadingWhite = leadwhite .. nexttoken.LeadingWhite
-                        end
-                    end
-                    --print(leadwhite)
-
-                    stat.StatementList[i] = nil
-                end	
-
-                dbgprint("--- ! stat:", ch)
-
-                solveStat(ch)
-            end
-        elseif stat.Type == "BreakStat" then
-            --nothing
-        elseif stat.Type == "ContinueStat" then
-            --what
-        elseif stat.Type == "ReturnStat" then
-            for i, expr in ipairs(stat.ExprList) do
-                solveExpr(expr)
-            end
-        elseif stat.Type == "LocalVarStat" then
-            if stat.Token_Equals ~= nil then
-                for i, expr in ipairs(stat.ExprList) do
-                    solveExpr(expr)
-                end
-            end
-        elseif stat.Type == "LocalFunctionStat" then
-            solveStat(stat.FunctionStat.Body)
-
-            if #stat.FunctionStat.NameChain == 1 then
-                if stat.FunctionStat.NameChain[1].UseCount == 0 then
-                    return stat.Remove()
-                end
-            end
-
-        elseif stat.Type == "FunctionStat" then
-            solveStat(stat.Body)
-        elseif stat.Type == "RepeatStat" then
-            solveStat(stat.Body)
-            solveExpr(stat.Condition)
-
-            if stat.Body.Type == "StatList" and #stat.Body.StatementList == 0 then
-                return stat.Remove()
-            end
-        elseif stat.Type == "GenericForStat" then
-            for i, expr in ipairs(stat.GeneratorList) do
-                solveExpr(expr)
-            end
-            solveStat(stat.Body)
-        elseif stat.Type == "NumericForStat" then
-            for i, expr in ipairs(stat.RangeList) do
-                solveExpr(expr)
-            end
-            solveStat(stat.Body)
-
-            local a = stat.RangeList[1]
-            local b = stat.RangeList[2]
-            local c = stat.RangeList[3]
-            if a == nil or b == nil then
-                return stat.Remove()
-            end
-
-            removeParen(a)
-            removeParen(b)
-            removeParen(c)
-
-            if a.Type ~= "NumberLiteral" or b.Type ~= "NumberLiteral" or c ~= nil and (c.Type ~= "NumberLiteral" or c == nil) then
-                return
-            end
-
-            local start = tonumber(a.Token.Source)
-            local endd = tonumber(b.Token.Source)
-            local step = (c ~= nil and tonumber(c.Token.Source)) or 1
-
-            local t1 = ((step > 0 and start <= endd) or (step < 0 and start >= endd))
-            local t2 = ((endd - start) + step) / step
-
-            local willRun = t1 and t2 >= 0
-
-            if not willRun then
-                return stat.Remove()
-            end
-
-            if stat.Body.Type == "StatList" and #stat.Body.StatementList == 0 then
-                return stat.Remove()
-            end
-        elseif stat.Type == "WhileStat" then
-            solveExpr(stat.Condition)
-            solveStat(stat.Body)
-
-            local condition = stat.Condition
-            if condition.Type == "ParenExpr" then
-                condition = condition.Expression
-            end
-            if condition.Type == "BooleanLiteral" then
-                if condition == nil or condition.Token == nil or condition.Token.Source ~= "false" then
-                end
-            elseif condition.Type == "NilLiteral" then
-                return stat.Remove()
-            end
-        elseif stat.Type == "DoStat" then
-            solveStat(stat.Body)
-
-            if stat.Body == nil or stat.Body.Type == "StatList" and #stat.Body.StatementList == 0 then
-                return stat.Remove()
-            elseif #stat.Body.StatementList == 1 then
-                local s = stat.Body.StatementList[1]
-                if s.Type ~= 'ContinueStat'
-                    and s.Type ~= 'BreakStat'
-                    and s.Type ~= 'ReturnStat' then
-                    replace(stat, s)
-                end
-            end
-        elseif stat.Type == "IfStat" then
-            --print("CONDIT IFSTAT BEFORE: ", stat.Condition)
-
-            solveExpr(stat.Condition)
-            --print("CONDIT IFSTAT BEFORE2: ", stat.Condition)
-            solveStat(stat.Body)
-            for i, clause in ipairs(stat.ElseClauseList) do
-                if clause.Condition ~= nil then
-                    solveExpr(clause.Condition)
-                end
-                solveStat(clause.Body)
-            end
-
-            local condition = stat.Condition
-            if condition.Type == "ParenExpr" then
-                condition = condition.Expression
-            end
-            if condition.Type == "BooleanLiteral" and solveifstats then
-                if condition.Token.Source == "false" then --its useless what lol
-                    if #stat.ElseClauseList > 1 then
-                        if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
-                            local newifstat = clone(stat)
-
-                            --replace clause information
-                            local firstelseclause = newifstat.ElseClauseList[1]
-
-                            --newifstat.Token_Then = firstelseclause.Token_Then
-                            newifstat.Body = firstelseclause.Body
-                            newifstat.Condition = firstelseclause.Condition
-                            table.remove(newifstat.ElseClauseList, 1)
-
-                            stat.Remove()
-                            return stat.NewStat(newifstat, 1)
-                        end
-                    else
-                        local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
-                        if lastclause and not lastclause.Condition then
-                            dbgprint("Attempting to replace token")
-                            --Replace last elseclause as the main will always be performed.
-                            replace(stat, { --__here
-                                Type = 'DoStat';
-                                Body = lastclause.Body;
-                                Token_Do = {
-                                    LeadingWhite = stat:GetFirstToken().LeadingWhite or "",
-                                    Source = "do",
-                                    Type = "Keyword"
-                                };
-                                GetFirstToken = function(self)
-                                    return self.Token_Do
-                                end;
-                                GetLastToken = function(self)
-                                    return self.Token_End
-                                end;
-                            })
-                        else
-                            stat.Remove() --remove it lol
-                        end
-                    end
-                elseif condition.Token.Source == "true" then
-					--[[ --My dumb ahh just realized all this is useless...
-					if stat.ElseClauseList then
-						if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
-							local newifstat = copy(stat)
-	
-							--replace clause information
-							local firstelseclause = newifstat.ElseClauseList[1]
-							--newifstat.Token_Then = firstelseclause.Token_Then
-							newifstat.Body = firstelseclause.Body
-							newifstat.Condition = firstelseclause.Condition
-							table.remove(newifstat.ElseClauseList, 1)
-	
-							stat.NewStat(newifstat, 1)
-						end
-						local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
-						if lastclause and not lastclause.Condition then
-							table.remove(stat.ElseClauseList) --Remove last elseclause, as the else will never be performed.
-						end
-					end
-					]]
-                    replace(stat, { --__here
-                        Type = 'DoStat';
-                        Body = stat.Body;
-                        Token_Do = {
-                            LeadingWhite = stat.Token_If.LeadingWhite or "",
-                            Source = "do",
-                            Type = "Keyword"
-                        };
-                        GetFirstToken = function(self)
-                            return self.Token_Do
-                        end;
-                        GetLastToken = function(self)
-                            return self.Token_End
-                        end;
-                    })
-                end
-            elseif condition.Type == "NilLiteral" then
-                return stat.Remove()
-            end
-
-            if solveifstats then
-                for i = 1, #stat.ElseClauseList do
-                    local clause = stat.ElseClauseList[i]
-                    if clause then
-                        local condition = clause.Condition
-                        if condition and condition.Token and stat.ElseClauseList[i].Token then
-                            if condition.Token.Source == "true" then
-                                repeat
-                                    table.remove(stat.ElseClauseList, i + 1)
-                                until not stat.ElseClauseList[i + 1]
-                                stat.ElseClauseList[i].Condition = nil
-                                stat.ElseClauseList[i].ClauseType = "else"
-                                stat.ElseClauseList[i].Token.Source = "else"
-                            elseif condition.Token.Source == "false" then
-                                table.remove(stat.ElseClauseList, i)
-                            else
-                                error("invalid source to boolean value")
-                            end
-                        end
-                    end
-                end
-            end
-        elseif stat.Type == "CallExprStat" then
-            solveExpr(stat.Expression)
-        elseif stat.Type == "CompoundStat" then
-            solveExpr(stat.Lhs)
-            solveExpr(stat.Rhs)
-        elseif stat.Type == "AssignmentStat" then
-            for i, ex in pairs(stat.Lhs) do
-                solveExpr(ex)
-            end
-            for i, ex in ipairs(stat.Rhs) do
-                solveExpr(ex)
-                local lhsval = stat.Lhs[i]
-                local rhsval = ex
-                if lhsval.Variable then
-                    local curlocation = lhsval.Variable.Location
-                    --if rhsval.Type ~= "BinopExpr" then
-                        lhsval.Variable.Info.LiteralStack[curlocation] = {rhsval, lhsval.Variable.Scope}
-                    --end
-                    --ex.Variable.LiteralVal = stat.Rhs[i]
-                end
-            end
-        else
-            error("unfound: "..tostring(stat.Type))
-        end
-    end
-
-    solveStat(ast)
-    return ast
-end
-
-
---minify(sourcecode: string, useminify2: boolean)
+-- minify(sourcecode: string, useminify2: boolean)
 local function minify(src, useminify2)
     local ast = CreateLuaParser(src)
     local global_scope, root_scope = AddVariableInfo(ast)
@@ -4417,7 +4452,7 @@ local function minify(src, useminify2)
     return StringAst(result)
 end
 
---beautify(sourcecode: string, beautifyvariables: boolean?, solveconstants: boolean?, solveifstats: boolean?, replaceconstants: boolean?)
+-- beautify(sourcecode: string, beautifyvariables: boolean?, solveconstants: boolean?, solveifstats: boolean?, replaceconstants: boolean?)
 local function beautify(src, beautifyvariables, solvemath, ...)
     local ast = CreateLuaParser(src)
     if beautifyvariables or solvemath then --Variable info required for solvemath and beautifyvariables
@@ -4432,6 +4467,8 @@ local function beautify(src, beautifyvariables, solvemath, ...)
     local result = FormatAst(ast) --solveconstants: boolean?, solveifstats: boolean?, replaceconstants: boolean?
     return StringAst(result)
 end
+
+--#endregion
 
 return {
     beautify = beautify,

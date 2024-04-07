@@ -1,3 +1,4 @@
+
 -- If statement
 local x = 10
 if x > 0 then
@@ -10,23 +11,27 @@ end
 
 -- While loop
 local i = 1
-while i <= 5 do --solving to `true`
+while i <= 5 do
     print("While loop iteration:", i)
-    i = i + 1 --this is also solving to `i = 2`
+    i = i + 1
 end
-
 -- Repeat until loop
 local j = 1
 repeat
     print("Repeat until loop iteration:", j)
-    j = j + 1 --known problem is solving to `j = 2`, as no repeat loop support.
-until j > 5 --this is solving to false
+    j = j + 1
+until j > 5
 
 -- For loop
 print("For loop:")
 for k = 1, 5 do
     print(k)
 end
+
+-- Function set variable
+local a = 23
+a = a + 1
+print(a + 2)
 
 -- Nested loop
 print("Nested loops:")
