@@ -2323,6 +2323,9 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             --dbgprint("literal", var.Location, var.Info.LiteralStack)
             ----dbgprinttab(var.Info.LiteralStack) --Its laggy to print stack...
 
+            dbgprint("stack:")
+            dbgprinttab(var.Info.LiteralStack, 2)
+
             local location = var.Location
             local literalfound, literalscope
             while true do
@@ -2330,6 +2333,9 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                     local data = var.Info.LiteralStack[location]
                     if data then
                         local literaltest, literalscope = data[1], data[2]
+
+                        dbgprint("literal testing")
+                        dbgprinttab(literaltest, 2)
 
                         if literaltest then
                             --dbgprint("testing literal...")
@@ -2340,11 +2346,15 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                                 return --Calls immedately void, as they are impredictable on what they do to the variable, atleast for right now
                             elseif getfunctionscope(literalscope) ~= getfunctionscope(var.Scope) then
                                 -- Continue as the function's control flow is unpredictable
-                            elseif getscopeloop(literalscope) ~= getscopeloop(var.Scope) then --solving point!
+                            elseif getscopeloop(literalscope) ~= getscopeloop(var.Scope) then --solving point!, just search if a child instead, but may be laggy... 
                                 -- Continue as the function's control flow is unpredictable
-                                return                   
-                            elseif not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
+                                return
+                            elseif not literalscope then
+                                --Not good..
+                            elseif literalscope.Depth > var.Scope.Depth then
                                 -- Lower scopes shouldn't effect us
+                            elseif literalscope.Depth == var.Scope.Depth and literalscope ~= var.Scope then 
+                                --"You think the same depth correlates us. You are in that scope. I am in this scope. We are not the same."
                             else
                                 literalfound = literaltest --This is a good literal
                                 break
@@ -2381,7 +2391,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
     end
 
     local function solvebinop(operator, left1, right1, leadingwhite)
-        --dbgprint("MATHSOLVE: SOLVING BINOP: ",operator,left1,right1)
+        dbgprint("MATHSOLVE: SOLVING BINOP: ",operator,left1,right1)
 
         local lhs = left1
         local rhs = right1
@@ -2403,6 +2413,8 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             if rhs.Type == "VariableExpr" then
                 rhs = resolveliteral(rhs)
             end
+
+            dbgprint("Binop solve got:", lhs, rhs)
         end
 
         do --Voids, Checks on if we shouldn't continue
