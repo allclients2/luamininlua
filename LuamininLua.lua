@@ -2100,9 +2100,9 @@ function AddVariableInfo(ast)
                     local curlocation = ex.Variable.Location
                     ex.Variable.Info.AssignedTo = true
                     local rhsval = stat.Rhs[i]
-                    if rhsval.Type ~= "BinopExpr" then
+                    --if rhsval.Type ~= "BinopExpr" then
                         ex.Variable.Info.LiteralStack[curlocation] = {rhsval, currentScope}
-                    end
+                    --end
                     --ex.Variable.LiteralVal = stat.Rhs[i]
                 end
             end
@@ -3638,8 +3638,15 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
 
     --determines if a expression is safe to replace if the stack is no more than 1
     local function safetoreplace(literalstack)  --solving point!!
-        return count(literalstack) <= 1
+        for _, literal in pairs(literalstack) do
+            if type(literal) == "table" and not replaceTypes[literal.Type] then
+                return false
+            end
+        end
+        return true
     end
+
+    
 
     --attempt to resolve the literal from a variable
     local function resolveliteral(expr, noreplace)
@@ -3651,24 +3658,29 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             local location = var.Location
             local literalfound, literalscope
             while true do
-                local data = var.Info.LiteralStack[location]
-                if data then
-                    literalfound, literalscope = data[1], data[2]
-                    if literalfound then
-                        if literalfound.Type == "CallExprStat" or literalfound.Type == "CallExpr" then
-                            dbgprint("is call, voiding..")
-                            return
+                if var.Location - 1 ~= location and var.Location ~= location then --dont want to look for ourselves, as an assignment
+                    local data = var.Info.LiteralStack[location]
+                    if data then
+                        literalfound, literalscope = data[1], data[2]
+                        if literalfound then
+                            dbgprinttab(literalfound)
+                            if literalfound.Type == "CallExprStat" or literalfound.Type == "CallExpr" then
+                                dbgprint("is call, voiding..")
+                                return
+                            elseif literalfound.Type == "BinopExpr" then
+                                dbgprint("is binop, break..")
+                                break
+                            elseif not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
+                                    dbgprint("lower Scope, nvm..")
+                                    --return --dont return just continue
+                            else
+                                break --we good
+                            end
                         end
-                        if not literalscope or literalscope.Depth > var.Scope.Depth then --solving point!
-                            dbgprint("lower Scope, nvm..")
-                            --return --dont return just continue
-                        else
-                            break
-                        end
+                    elseif location <= 0 then
+                        dbgprint("not found")
+                        break
                     end
-                elseif location <= 0 then
-                    dbgprint("not found")
-                    break
                 end
                 location = location - 1
             end
@@ -4150,7 +4162,6 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
         elseif stat.Type == "LocalVarStat" then
             if stat.Token_Equals ~= nil then
                 for i, expr in ipairs(stat.ExprList) do
-                    dbgprint("solve lodec expr:",  expr)
                     solveExpr(expr)
                 end
             end
@@ -4260,43 +4271,43 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             end
             if condition.Type == "BooleanLiteral" and solveifstats then
                 if condition.Token.Source == "false" then --its useless what lol
-                    if stat.ElseClauseList then
-                        if #stat.ElseClauseList > 1 then
-                            if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
-                                local newifstat = clone(stat)
+                    if #stat.ElseClauseList > 1 then
+                        if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
+                            local newifstat = clone(stat)
 
-                                --replace clause information
-                                local firstelseclause = newifstat.ElseClauseList[1]
+                            --replace clause information
+                            local firstelseclause = newifstat.ElseClauseList[1]
 
-                                --newifstat.Token_Then = firstelseclause.Token_Then
-                                newifstat.Body = firstelseclause.Body
-                                newifstat.Condition = firstelseclause.Condition
-                                table.remove(newifstat.ElseClauseList, 1)
+                            --newifstat.Token_Then = firstelseclause.Token_Then
+                            newifstat.Body = firstelseclause.Body
+                            newifstat.Condition = firstelseclause.Condition
+                            table.remove(newifstat.ElseClauseList, 1)
 
-                                stat.Remove()
-                                return stat.NewStat(newifstat, 1)
-                            end
+                            stat.Remove()
+                            return stat.NewStat(newifstat, 1)
+                        end
+                    else
+                        local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
+                        if lastclause and not lastclause.Condition then
+                            dbgprint("Attempting to replace token")
+                            --Replace last elseclause as the main will always be performed.
+                            replace(stat, { --__here
+                                Type = 'DoStat';
+                                Body = lastclause.Body;
+                                Token_Do = {
+                                    LeadingWhite = stat:GetFirstToken().LeadingWhite or "",
+                                    Source = "do",
+                                    Type = "Keyword"
+                                };
+                                GetFirstToken = function(self)
+                                    return self.Token_Do
+                                end;
+                                GetLastToken = function(self)
+                                    return self.Token_End
+                                end;
+                            })
                         else
-                            local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
-                            if lastclause and not lastclause.Condition then
-                                dbgprint("Attempting to replace token")
-                                --Replace last elseclause as the main will always be performed.
-                                replace(stat, { --__here
-                                    Type = 'DoStat';
-                                    Body = lastclause.Body;
-                                    Token_Do = {
-                                        LeadingWhite = lastclause.Token.LeadingWhite or "",
-                                        Source = "do",
-                                        Type = "Keyword"
-                                    };
-                                    GetFirstToken = function(self)
-                                        return self.Token_Do
-                                    end;
-                                    GetLastToken = function(self)
-                                        return self.Token_End
-                                    end;
-                                })
-                            end
+                            stat.Remove() --remove it lol
                         end
                     end
                 elseif condition.Token.Source == "true" then
@@ -4377,9 +4388,9 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                 local rhsval = ex
                 if lhsval.Variable then
                     local curlocation = lhsval.Variable.Location
-                    if rhsval.Type ~= "BinopExpr" then
+                    --if rhsval.Type ~= "BinopExpr" then
                         lhsval.Variable.Info.LiteralStack[curlocation] = {rhsval, lhsval.Variable.Scope}
-                    end
+                    --end
                     --ex.Variable.LiteralVal = stat.Rhs[i]
                 end
             end
