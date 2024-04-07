@@ -3726,7 +3726,7 @@ local function StripAst(ast)
     end
 
     -- Make to adjacent tokens as close as possible
-    local function joint(tokenA, tokenB)
+    local function joint(tokenA, tokenB, JointChar)
         -- Get the trailing A <-> leading B character pair
         local lastCh = tokenA.Source:sub(-1, -1)
         local firstCh = tokenB.Source:sub(1, 1)
@@ -3746,7 +3746,7 @@ local function StripAst(ast)
             (lastCh == '.' and firstCh == '.') or
             (AllIdentChars[lastCh] and AllIdentChars[firstCh]) 
         then
-            tokenB.LeadingWhite = ' ' -- Use a separator
+            tokenB.LeadingWhite = JointChar or ' ' -- Use a separator
         else
             tokenB.LeadingWhite = '' -- Don't use a separator
         end
@@ -3879,7 +3879,6 @@ local function StripAst(ast)
                 --print("first token:", chStat:GetFirstToken(), "of ", chStat)
 
                 -- If there was a last statement, join them appropriately
-                --[[
 				local lastChStat = stat.StatementList[i-1]
 				if lastChStat then
 					-- See if we can remove a semi-colon, the only case where we can't is if
@@ -3894,10 +3893,9 @@ local function StripAst(ast)
 					-- If there isn't a semi-colon, we should safely join the two statements
 					-- (If there is one, then no whitespace leading chStat is always okay)
 					if not stat.SemicolonList[i-1] then
-						joint(lastChStat:GetLastToken(), chStat:GetFirstToken())
+						joint(lastChStat:GetLastToken(), chStat:GetFirstToken(), ";")
 					end
 				end
-				]]
             end
 
             -- A semi-colon is never needed on the last stat in a statlist:
