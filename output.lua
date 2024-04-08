@@ -1,5 +1,5 @@
 
-local aew = 32
+local aew: number = 32
 
 --[[
 while idk - 32 do

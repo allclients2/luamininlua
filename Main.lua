@@ -4,7 +4,7 @@ io.input("Test.lua")
 
 local testsrc = io.read("*a")
 
-local result = LML.beautify(testsrc, false, true, true, true, true, false)
+local result = LML.Beautify(testsrc, false, true, true, true, true, false)
 
 local output = io.open("output.lua", "w+")
 output:write(result)
