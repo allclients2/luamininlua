@@ -4477,7 +4477,7 @@ local function minify(src, useminify2)
     return StringAst(result)
 end
 
--- beautify(sourcecode: string, beautifyvariables: boolean?, solveconstants: boolean?, solveifstats: boolean?, replaceconstants: boolean?)
+-- beautify(sourcecode: string, beautifyvariables: boolean?, solvemath: boolean?, solveconstants: boolean?, solveifstats: boolean?, replaceconstants: boolean?)
 local function beautify(src, beautifyvariables, solvemath, ...)
     local ast = CreateLuaParser(src)
     if beautifyvariables or solvemath then --Variable info required for solvemath and beautifyvariables
