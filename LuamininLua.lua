@@ -2793,7 +2793,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                         end
                     end
 
-                    if entryValue then
+                    if entryValue and canSolve[indexorfield.Type] then
                         local entryclone = clonedeep(entryValue) --BE CAREFUL, luckily this never references "upward", so no loops.
                         --dbgprint("successfully replaced index!")
                         local beforeleadingwhite = expr:GetFirstToken().LeadingWhite
