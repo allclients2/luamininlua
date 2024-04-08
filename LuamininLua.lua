@@ -4181,8 +4181,10 @@ local function MinifyVariables(globalScope, rootScope)
     end
     local function temporaryRename(scope)
         for _, var in pairs(scope.VariableList) do
-            var:Rename('_TMP_'..temporaryIndex..'_')
-            temporaryIndex = temporaryIndex + 1
+            if var.Name ~= "..." then
+                var:Rename('_TMP_'..temporaryIndex..'_')
+                temporaryIndex = temporaryIndex + 1
+            end
         end
         for _, childScope in pairs(scope.ChildScopeList) do
             temporaryRename(childScope)
@@ -4205,17 +4207,18 @@ local function MinifyVariables(globalScope, rootScope)
         end
     end
 
-	--[[
 	-- Now rename all local vars
 	rootScope.FirstFreeName = nextFreeNameIndex
 	local function doRenameScope(scope)
 		for _, var in pairs(scope.VariableList) do
-			local varName = ''
-			repeat
-				varName = indexToVarName(scope.FirstFreeName)
-				scope.FirstFreeName = scope.FirstFreeName + 1
-			until not Keywords[varName] and not externalGlobals[varName]
-			var:Rename(varName)
+            if var.Name ~= "..." then
+                local varName = ''
+                repeat
+                    varName = indexToVarName(scope.FirstFreeName)
+                    scope.FirstFreeName = scope.FirstFreeName + 1
+                until not Keywords[varName] and not externalGlobals[varName]
+                var:Rename(varName)
+            end
 		end
 		for _, childScope in pairs(scope.ChildScopeList) do
 			childScope.FirstFreeName = scope.FirstFreeName
@@ -4223,7 +4226,6 @@ local function MinifyVariables(globalScope, rootScope)
 		end
 	end
 	doRenameScope(rootScope)
-	]]
 end
 
 local function MinifyVariables_2(globalScope, rootScope)
@@ -4257,8 +4259,10 @@ local function MinifyVariables_2(globalScope, rootScope)
         -- Recursively add locals, we can rename all of those
         local function addFrom(scope)
             for _, var in pairs(scope.VariableList) do
-                table.insert(allVariables, var)
-                table.insert(allLocalVariables, var)
+                if var.Name ~= "..." then
+                    table.insert(allVariables, var)
+                    table.insert(allLocalVariables, var)
+                end
             end
             for _, childScope in pairs(scope.ChildScopeList) do
                 addFrom(childScope)
@@ -4292,7 +4296,6 @@ local function MinifyVariables_2(globalScope, rootScope)
         return name
     end
 
---[[
 	-- For each variable, go to rename it
 	for _, var in pairs(allVariables) do
 		-- Lazy... todo: Make theis pair a proper for-each-pair-like set of loops 
@@ -4380,8 +4383,6 @@ local function MinifyVariables_2(globalScope, rootScope)
 			end
 		end
 	end
-	]]
-
 
     -- -- 
     -- print("Total Variables: "..#allVariables)
@@ -4439,16 +4440,18 @@ local function BeautifyVariables(globalScope, rootScope)
 
     local function modify(scope)
         for _, var in pairs(scope.VariableList) do
-            local name = 'L_'..localNumber..'_'
-            if var.Info2.Type == 'Argument' then
-                name = name..'arg'..var.Info2.Index
-            elseif var.Info2.Type == 'LocalFunction' then
-                name = name..'func'
-            elseif var.Info2.Type == 'ForRange' then
-                name = name..'forvar'..var.Info2.Index
+            if var.Name ~= "..." then
+                local name = 'L_'..localNumber..'_'
+                if var.Info2.Type == 'Argument' then
+                    name = name..'arg'..var.Info2.Index
+                elseif var.Info2.Type == 'LocalFunction' then
+                    name = name..'func'
+                elseif var.Info2.Type == 'ForRange' then
+                    name = name..'forvar'..var.Info2.Index
+                end
+                setVarName(var, name)
+                localNumber = localNumber + 1
             end
-            setVarName(var, name)
-            localNumber = localNumber + 1
         end
         for _, scope in pairs(scope.ChildScopeList) do
             modify(scope)
@@ -4460,6 +4463,7 @@ end
 
 --#region Module Interface Functions
 
+-- note: minify2 is glitchy, very.
 -- minify(sourcecode: string, useminify2: boolean)
 local function minify(src, useminify2)
     local ast = CreateLuaParser(src)
