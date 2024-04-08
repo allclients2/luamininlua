@@ -4465,13 +4465,15 @@ end
 
 -- note: minify2 is glitchy, very.
 -- minify(sourcecode: string, useminify2: boolean)
-local function Minify(src, useminify2)
+local function Minify(src, minifyvariables, useminify2)
     local ast = CreateLuaParser(src)
     local global_scope, root_scope = AddVariableInfo(ast)
-    if useminify2 then
-        MinifyVariables_2(global_scope, root_scope)
-    else
-        MinifyVariables(global_scope, root_scope)
+    if minifyvariables then
+        if useminify2 then
+            MinifyVariables_2(global_scope, root_scope)
+        else
+            MinifyVariables(global_scope, root_scope)
+        end
     end
     local result = StripAst(ast)
     return StringAst(result)
