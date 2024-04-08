@@ -4207,10 +4207,10 @@ local function MinifyVariables(globalScope, rootScope)
         end
     end
 
-	-- Now rename all local vars
-	rootScope.FirstFreeName = nextFreeNameIndex
-	local function doRenameScope(scope)
-		for _, var in pairs(scope.VariableList) do
+    -- Now rename all local vars
+    rootScope.FirstFreeName = nextFreeNameIndex
+    local function doRenameScope(scope)
+        for _, var in pairs(scope.VariableList) do
             if var.Name ~= "..." then
                 local varName = ''
                 repeat
@@ -4219,13 +4219,13 @@ local function MinifyVariables(globalScope, rootScope)
                 until not Keywords[varName] and not externalGlobals[varName]
                 var:Rename(varName)
             end
-		end
-		for _, childScope in pairs(scope.ChildScopeList) do
-			childScope.FirstFreeName = scope.FirstFreeName
-			doRenameScope(childScope)
-		end
-	end
-	doRenameScope(rootScope)
+        end
+        for _, childScope in pairs(scope.ChildScopeList) do
+            childScope.FirstFreeName = scope.FirstFreeName
+            doRenameScope(childScope)
+        end
+    end
+    doRenameScope(rootScope)
 end
 
 local function MinifyVariables_2(globalScope, rootScope)
@@ -4296,93 +4296,93 @@ local function MinifyVariables_2(globalScope, rootScope)
         return name
     end
 
-	-- For each variable, go to rename it
-	for _, var in pairs(allVariables) do
-		-- Lazy... todo: Make theis pair a proper for-each-pair-like set of loops 
-		-- rather than using a renamed flag.
-		var.Renamed = true
+    -- For each variable, go to rename it
+    for _, var in pairs(allVariables) do
+        -- Lazy... todo: Make theis pair a proper for-each-pair-like set of loops 
+        -- rather than using a renamed flag.
+        var.Renamed = true
 
-		-- Find the first unused name
-		local i = 1
-		while var.UsedNameArray[i] do
-			i = i + 1
-		end
+        -- Find the first unused name
+        local i = 1
+        while var.UsedNameArray[i] do
+            i = i + 1
+        end
 
-		-- Rename the variable to that name
-		var:Rename(varIndexToValidVarName(i))
+        -- Rename the variable to that name
+        var:Rename(varIndexToValidVarName(i))
 
-		if var.Scope then
-			-- Now we need to mark the name as unusable by any variables:
-			--  1) At the same depth that overlap lifetime with this one
-			--  2) At a deeper level, which have a reference to this variable in their lifetimes
-			--  3) At a shallower level, which are referenced during this variable's lifetime
-			for _, otherVar in pairs(allVariables) do
-				if not otherVar.Renamed then
-					if not otherVar.Scope or otherVar.Scope.Depth < var.Scope.Depth then
-						-- Check Global variable (Which is always at a shallower level)
-						--  or
-						-- Check case 3
-						-- The other var is at a shallower depth, is there a reference to it
-						-- durring this variable's lifetime?
-						for _, refAt in pairs(otherVar.ReferenceLocationList) do
-							if refAt >= var.BeginLocation and refAt <= var.ScopeEndLocation then
-								-- Collide
-								otherVar.UsedNameArray[i] = true
-								break
-							end
-						end
+        if var.Scope then
+            -- Now we need to mark the name as unusable by any variables:
+            --  1) At the same depth that overlap lifetime with this one
+            --  2) At a deeper level, which have a reference to this variable in their lifetimes
+            --  3) At a shallower level, which are referenced during this variable's lifetime
+            for _, otherVar in pairs(allVariables) do
+                if not otherVar.Renamed then
+                    if not otherVar.Scope or otherVar.Scope.Depth < var.Scope.Depth then
+                        -- Check Global variable (Which is always at a shallower level)
+                        --  or
+                        -- Check case 3
+                        -- The other var is at a shallower depth, is there a reference to it
+                        -- durring this variable's lifetime?
+                        for _, refAt in pairs(otherVar.ReferenceLocationList) do
+                            if refAt >= var.BeginLocation and refAt <= var.ScopeEndLocation then
+                                -- Collide
+                                otherVar.UsedNameArray[i] = true
+                                break
+                            end
+                        end
 
-					elseif otherVar.Scope.Depth > var.Scope.Depth then
-						-- Check Case 2
-						-- The other var is at a greater depth, see if any of the references
-						-- to this variable are in the other var's lifetime.
-						for _, refAt in pairs(var.ReferenceLocationList) do
-							if refAt >= otherVar.BeginLocation and refAt <= otherVar.ScopeEndLocation then
-								-- Collide
-								otherVar.UsedNameArray[i] = true
-								break
-							end
-						end
+                    elseif otherVar.Scope.Depth > var.Scope.Depth then
+                        -- Check Case 2
+                        -- The other var is at a greater depth, see if any of the references
+                        -- to this variable are in the other var's lifetime.
+                        for _, refAt in pairs(var.ReferenceLocationList) do
+                            if refAt >= otherVar.BeginLocation and refAt <= otherVar.ScopeEndLocation then
+                                -- Collide
+                                otherVar.UsedNameArray[i] = true
+                                break
+                            end
+                        end
 
-					else --otherVar.Scope.Depth must be equal to var.Scope.Depth
-						-- Check case 1
-						-- The two locals are in the same scope
-						-- Just check if the usage lifetimes overlap within that scope. That is, we
-						-- can shadow a local variable within the same scope as long as the usages
-						-- of the two locals do not overlap.
-						if var.BeginLocation < otherVar.EndLocation and
-							var.EndLocation > otherVar.BeginLocation
-						then
-							otherVar.UsedNameArray[i] = true
-						end
-					end
-				end
-			end
-		else
-			-- This is a global var, all other globals can't collide with it, and
-			-- any local variable with a reference to this global in it's lifetime
-			-- can't collide with it.
-			for _, otherVar in pairs(allVariables) do
-				if not otherVar.Renamed then
-					if otherVar.Type == 'Global' then
-						otherVar.UsedNameArray[i] = true
-					elseif otherVar.Type == 'Local' then
-						-- Other var is a local, see if there is a reference to this global within
-						-- that local's lifetime.
-						for _, refAt in pairs(var.ReferenceLocationList) do
-							if refAt >= otherVar.BeginLocation and refAt <= otherVar.ScopeEndLocation then
-								-- Collide
-								otherVar.UsedNameArray[i] = true
-								break
-							end
-						end
-					else
-						error("unreachable")
-					end
-				end
-			end
-		end
-	end
+                    else --otherVar.Scope.Depth must be equal to var.Scope.Depth
+                        -- Check case 1
+                        -- The two locals are in the same scope
+                        -- Just check if the usage lifetimes overlap within that scope. That is, we
+                        -- can shadow a local variable within the same scope as long as the usages
+                        -- of the two locals do not overlap.
+                        if var.BeginLocation < otherVar.EndLocation and
+                            var.EndLocation > otherVar.BeginLocation
+                        then
+                            otherVar.UsedNameArray[i] = true
+                        end
+                    end
+                end
+            end
+        else
+            -- This is a global var, all other globals can't collide with it, and
+            -- any local variable with a reference to this global in it's lifetime
+            -- can't collide with it.
+            for _, otherVar in pairs(allVariables) do
+                if not otherVar.Renamed then
+                    if otherVar.Type == 'Global' then
+                        otherVar.UsedNameArray[i] = true
+                    elseif otherVar.Type == 'Local' then
+                        -- Other var is a local, see if there is a reference to this global within
+                        -- that local's lifetime.
+                        for _, refAt in pairs(var.ReferenceLocationList) do
+                            if refAt >= otherVar.BeginLocation and refAt <= otherVar.ScopeEndLocation then
+                                -- Collide
+                                otherVar.UsedNameArray[i] = true
+                                break
+                            end
+                        end
+                    else
+                        error("unreachable")
+                    end
+                end
+            end
+        end
+    end
 
     -- -- 
     -- print("Total Variables: "..#allVariables)
@@ -4465,7 +4465,7 @@ end
 
 -- note: minify2 is glitchy, very.
 -- minify(sourcecode: string, useminify2: boolean)
-local function minify(src, useminify2)
+local function Minify(src, useminify2)
     local ast = CreateLuaParser(src)
     local global_scope, root_scope = AddVariableInfo(ast)
     if useminify2 then
@@ -4478,7 +4478,7 @@ local function minify(src, useminify2)
 end
 
 -- beautify(sourcecode: string, beautifyvariables: boolean?, solvemath: boolean?, solveconstants: boolean?, solveifstats: boolean?, replaceconstants: boolean?)
-local function beautify(src, beautifyvariables, solvemath, ...)
+local function Beautify(src, beautifyvariables, solvemath, ...)
     local ast = CreateLuaParser(src)
     if beautifyvariables or solvemath then --Variable info required for solvemath and beautifyvariables
         local global_scope, root_scope = AddVariableInfo(ast)
@@ -4496,6 +4496,6 @@ end
 --#endregion
 
 return {
-    beautify = beautify,
-    minify = minify
+    Beautify = Beautify,
+    Minify = Minify
 }
