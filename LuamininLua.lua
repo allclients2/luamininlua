@@ -2162,8 +2162,8 @@ function AddVariableInfo(ast)
     return globalVars, popScope()
 end
 
---Solve the Solveable math in an ast, Also some other special functions like solveconstants, solveifstats, replaceconstants, solveindexes, etc...
-local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, solveindexes)
+--Solve the Solveable math in an ast, Also some other special functions like solveconstants, solveifstats, replaceconstants, replaceindexes, etc...
+local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, replaceindexes)
     local ast = ast
     local canSolve = {
         NumberLiteral = true,
@@ -2245,7 +2245,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
     local function replace(a, b)
         if b == nil then return end
         for i, v in pairs(b) do
-            a[i] = v
+            a[i] = v;
         end
     end
 
@@ -2323,9 +2323,6 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             --dbgprint("literal", var.Location, var.Info.LiteralStack)
             ----dbgprinttab(var.Info.LiteralStack) --Its laggy to print stack...
 
-            dbgprint("stack:")
-            dbgprinttab(var.Info.LiteralStack, 2)
-
             local location = var.Location
             local literalfound, literalscope
             while true do
@@ -2333,9 +2330,6 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                     local data = var.Info.LiteralStack[location]
                     if data then
                         local literaltest, literalscope = data[1], data[2]
-
-                        dbgprint("literal testing")
-                        dbgprinttab(literaltest, 2)
 
                         if literaltest then
                             --dbgprint("testing literal...")
@@ -2764,7 +2758,7 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             solveExpr(expr.Base)
             solveExpr(indexorfield)
 
-            if solveindexes and indexorfield and (canSolve[indexorfield.Type] or indexorfield.Type == "Ident") then
+            if replaceindexes and indexorfield and (canSolve[indexorfield.Type] or indexorfield.Type == "Ident") then
                 local literaltable = resolveliteral(expr.Base, true) --Resolve the literal of the Base
                 if literaltable and literaltable.Type == "TableLiteral" then
                     local entrylist = literaltable.EntryList
@@ -2942,83 +2936,43 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
             end
         elseif stat.Type == "IfStat" then
             --print("CONDIT IFSTAT BEFORE: ", stat.Condition)
-
+            
+            -- Solve the Conditions first
             solveExpr(stat.Condition)
-            --print("CONDIT IFSTAT BEFORE2: ", stat.Condition)
             solveStat(stat.Body)
-            for i, clause in ipairs(stat.ElseClauseList) do
+            for i, clause in pairs(stat.ElseClauseList) do
                 if clause.Condition ~= nil then
                     solveExpr(clause.Condition)
                 end
                 solveStat(clause.Body)
             end
 
-            local condition = stat.Condition
-            if condition.Type == "ParenExpr" then
-                condition = condition.Expression
+            local mainCondition = stat.Condition
+            if mainCondition.Type == "ParenExpr" then
+                mainCondition = mainCondition.Expression
             end
-            if condition.Type == "BooleanLiteral" and solveifstats then
-                if condition.Token.Source == "false" then --its useless what lol
-                    if #stat.ElseClauseList > 1 then
-                        if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
-                            local newifstat = clone(stat)
-
-                            --replace clause information
-                            local firstelseclause = newifstat.ElseClauseList[1]
-
-                            --newifstat.Token_Then = firstelseclause.Token_Then
-                            newifstat.Body = firstelseclause.Body
-                            newifstat.Condition = firstelseclause.Condition
-                            table.remove(newifstat.ElseClauseList, 1)
-
-                            stat.Remove()
-                            return stat.NewStat(newifstat, 1)
-                        end
+            
+            -- True = Always true
+            -- False = Always false
+            -- nil = Unknown; should test
+            local function testIfStat(condition) -- Whether if a if statement is given this statement, it will consider it as true
+                if condition.Type == "BooleanLiteral" then
+                    if condition.Token.Source == "true" then
+                        return true;
                     else
-                        local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
-                        if lastclause and not lastclause.Condition then
-                            --dbgprint("Attempting to replace token")
-                            --Replace last elseclause as the main will always be performed.
-                            replace(stat, { --__here
-                                Type = 'DoStat';
-                                Body = lastclause.Body;
-                                Token_Do = {
-                                    LeadingWhite = stat:GetFirstToken().LeadingWhite or "",
-                                    Source = "do",
-                                    Type = "Keyword"
-                                };
-                                GetFirstToken = function(self)
-                                    return self.Token_Do
-                                end;
-                                GetLastToken = function(self)
-                                    return self.Token_End
-                                end;
-                            })
-                        else
-                            stat.Remove() --remove it lol
-                        end
+                        return false; --Always false.
                     end
-                elseif condition.Token.Source == "true" then
-					--[[ --My dumb ahh just realized all this is useless...
-					if stat.ElseClauseList then
-						if stat.ElseClauseList[1] and stat.ElseClauseList[1].Condition then --Dont work about just `else` as those should never occur.
-							local newifstat = copy(stat)
-	
-							--replace clause information
-							local firstelseclause = newifstat.ElseClauseList[1]
-							--newifstat.Token_Then = firstelseclause.Token_Then
-							newifstat.Body = firstelseclause.Body
-							newifstat.Condition = firstelseclause.Condition
-							table.remove(newifstat.ElseClauseList, 1)
-	
-							stat.NewStat(newifstat, 1)
-						end
-						local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
-						if lastclause and not lastclause.Condition then
-							table.remove(stat.ElseClauseList) --Remove last elseclause, as the else will never be performed.
-						end
-					end
-					]]
+                elseif condition.Type == "NilLiteral" then
+                    return false; --Always nil, nil = false.
+                elseif condition.Type:find("Literal") then
+                    return true; --Literals are always true: `if 123 then print("met") end`, it will print "met"
+                end
+                return nil; -- We dont know, should probably test it.
+            end
+            
+            if solveifstats then
+                local conditionShouldTest = testIfStat(mainCondition);
+                if conditionShouldTest == true then --Always true
                     replace(stat, { --__here
                         Type = 'DoStat';
                         Body = stat.Body;
@@ -3034,26 +2988,93 @@ local function SolveMath(ast, solveconstants, solveifstats, replaceconstants, so
                             return self.Token_End
                         end;
                     })
-                end
-            elseif condition.Type == "NilLiteral" then
-                return stat.Remove()
-            end
+                elseif conditionShouldTest == nil then --Should let it test.
+                    -- Nothing to do here.
+                else -- Always false, Main Condition should be replaced with any else-ifs or else clauses.
+                    local replaceElseClause = true;
 
+                    if #stat.ElseClauseList > 1 then --Then it has else-ifs
+                        for i = 1, #stat.ElseClauseList do
+                            if stat.ElseClauseList[i] and stat.ElseClauseList[i].Condition then
+                                local testLevel = testIfStat(stat.ElseClauseList[i].Condition);
+                                if testLevel == true then --Always true
+                                    replace(stat, { --Replace with Do statement
+                                        Type = 'DoStat';
+                                        Body = stat.ElseClauseList[i].Body;
+                                        Token_Do = {
+                                            LeadingWhite = stat.ElseClauseList[i].Token.LeadingWhite or "", -- stat.ElseClauseList[i].Token is "elseif" token
+                                            Source = "do",
+                                            Type = "Keyword"
+                                        };
+                                        GetFirstToken = function(self)
+                                            return self.Token_Do
+                                        end;
+                                        GetLastToken = function(self)
+                                            return self.Token_End
+                                        end;
+                                    })
+                                    replaceElseClause = false;
+                                    break;
+                                elseif testLevel == false then --Always false
+                                    if i == #stat.ElseClauseList then
+                                        -- All else-if clause conditions in this if statement is false, let ElseClause replace, as if that fails (because no else clause), the
+                                        -- IfStat is useless and will be removed. 
+                                        dbgprint("All failed!")
+                                    end
+                                    -- Just wait for next clause
+                                elseif testLevel == nil then --Not determined to be true or false; should keep test
+                                    replaceElseClause = false; -- Determined this needs to be tested
+                                    break;
+                                end
+                            end
+                        end
+                        -- It should break if a condition is met in any else-clause, if not just let it make this DoStat
+                    end
+
+                    if replaceElseClause then --Replace the if statement with a do statement of the else clause (if then > ELSE < end) with DoStat as the main will always be performed.
+                        local lastclause = stat.ElseClauseList[#stat.ElseClauseList]
+                        if lastclause and not lastclause.Condition then
+                            replace(stat, { --__here
+                                Type = 'DoStat';
+                                Body = lastclause.Body;
+                                Token_Do = {
+                                    LeadingWhite = stat:GetFirstToken().LeadingWhite or "",
+                                    Source = "do",
+                                    Type = "Keyword"
+                                };
+                                GetFirstToken = function(self)
+                                    return self.Token_Do
+                                end;
+                                GetLastToken = function(self)
+                                    return self.Token_End
+                                end;
+                            })
+                            return;
+                        else -- Then that means this has no else statement.
+                            stat.Remove() --remove it lol
+                            return;
+                        end
+                    end
+                end
+            end
+            
+            -- Just in case we missed any.
             if solveifstats then
                 for i = 1, #stat.ElseClauseList do
                     local clause = stat.ElseClauseList[i]
                     if clause then
                         local condition = clause.Condition
-                        if condition and condition.Token and stat.ElseClauseList[i].Token and condition.Type == "BooleanLiteral" then
+                        if condition and condition.Token and clause.Token and condition.Type == "BooleanLiteral" then
                             if condition.Token.Source == "true" then
                                 repeat
-                                    table.remove(stat.ElseClauseList, i + 1)
+                                    table.remove(stat.ElseClauseList, i + 1) --remove all elseif's after it as those will never be reached
                                 until not stat.ElseClauseList[i + 1]
-                                stat.ElseClauseList[i].Condition = nil
-                                stat.ElseClauseList[i].ClauseType = "else"
-                                stat.ElseClauseList[i].Token.Source = "else"
+                                clause.Condition = nil
+                                clause.ClauseType = "else"
+                                clause.Token.Source = "else"
+                                break;
                             elseif condition.Token.Source == "false" then
-                                table.remove(stat.ElseClauseList, i)
+                                stat.ElseClauseList[i] = nil; --Hopefully the unparser isn't using a ipairs loop..
                             else
                                 error("invalid source to boolean value `"..tostring(condition.Token.Source).."`")
                             end
